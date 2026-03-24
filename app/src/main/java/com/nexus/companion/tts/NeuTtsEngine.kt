@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
+import com.nexus.companion.VoiceProfile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -12,15 +13,11 @@ import java.util.Locale
 class NeuTtsEngine(private val context: Context) {
 
     private var audioTrack: AudioTrack? = null
-    private var isInitialized = false
+    private var neuTtsAvailable = false
     private var fallbackTts: android.speech.tts.TextToSpeech? = null
     private var fallbackReady = false
 
-    var language: Locale = Locale.GERMAN
-        set(value) {
-            field = value
-            fallbackTts?.language = value
-        }
+    private var currentProfile: VoiceProfile = VoiceProfile.ANDROID_DE
 
     private val ttsModelFile: File
         get() = File(context.cacheDir, "models/neutts-nano-q4.gguf")
@@ -31,7 +28,7 @@ class NeuTtsEngine(private val context: Context) {
     fun initialize() {
         fallbackTts = android.speech.tts.TextToSpeech(context) { status ->
             if (status == android.speech.tts.TextToSpeech.SUCCESS) {
-                fallbackTts?.language = language
+                fallbackTts?.language = currentProfile.ttsLocale
                 fallbackReady = true
             }
         }
@@ -61,19 +58,24 @@ class NeuTtsEngine(private val context: Context) {
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
 
-        isInitialized = ttsModelFile.exists() && codecModelFile.exists()
+        neuTtsAvailable = ttsModelFile.exists() && codecModelFile.exists()
     }
 
+    fun setVoiceProfile(profile: VoiceProfile) {
+        currentProfile = profile
+        fallbackTts?.language = profile.ttsLocale
+    }
+
+    fun getCurrentProfile(): VoiceProfile = currentProfile
+
+    fun isNeuTtsAvailable(): Boolean = neuTtsAvailable
+
     suspend fun speak(text: String) = withContext(Dispatchers.IO) {
-        if (!isInitialized) {
-            if (fallbackReady) {
-                fallbackTts?.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "nexus_tts")
-            }
-            return@withContext
+        if (currentProfile.isNeural && neuTtsAvailable) {
+            // TODO: When NeuTTS GGUF models are downloaded, use llama.cpp to generate
+            // audio tokens and decode with NeuCodec. For now, fall through to Android TTS.
         }
 
-        // TODO: When NeuTTS GGUF models are downloaded, use llama.cpp to generate
-        // audio tokens and decode with NeuCodec. For now, use fallback.
         if (fallbackReady) {
             fallbackTts?.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "nexus_tts")
         }
@@ -89,8 +91,8 @@ class NeuTtsEngine(private val context: Context) {
         audioTrack = null
         fallbackTts?.shutdown()
         fallbackTts = null
-        isInitialized = false
+        neuTtsAvailable = false
     }
 
-    fun isAvailable(): Boolean = isInitialized || fallbackReady
+    fun isAvailable(): Boolean = neuTtsAvailable || fallbackReady
 }

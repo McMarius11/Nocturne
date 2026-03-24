@@ -32,7 +32,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.nexus.companion.AppLanguage
 import com.nexus.companion.llm.ModelInfo
 import com.nexus.companion.llm.ModelManager
 import com.nexus.companion.ui.theme.BatteryGreen
@@ -52,11 +51,9 @@ fun ModelSwitcherSheet(
     currentModelId: String?,
     downloadedModels: Set<String>,
     downloadState: ModelManager.DownloadState,
-    language: AppLanguage = AppLanguage.DE,
     onModelSelected: (ModelInfo) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val isDE = language == AppLanguage.DE
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(
@@ -72,7 +69,7 @@ fun ModelSwitcherSheet(
                 .padding(bottom = 32.dp)
         ) {
             Text(
-                text = if (isDE) "Modell waehlen" else "Choose model",
+                text = "LLM Model",
                 fontSize = 20.sp,
                 color = NexusTextPrimary,
                 modifier = Modifier.padding(bottom = 16.dp)
@@ -210,7 +207,7 @@ private fun ModelCard(
                     isDownloaded -> {
                         Icon(
                             Icons.Default.Check,
-                            contentDescription = "Heruntergeladen",
+                            contentDescription = "Downloaded",
                             tint = BatteryGreen,
                             modifier = Modifier.size(16.dp)
                         )
@@ -218,7 +215,7 @@ private fun ModelCard(
                     else -> {
                         Icon(
                             Icons.Default.CloudDownload,
-                            contentDescription = "Download nötig",
+                            contentDescription = "Download required",
                             tint = NexusTextDim,
                             modifier = Modifier.size(16.dp)
                         )

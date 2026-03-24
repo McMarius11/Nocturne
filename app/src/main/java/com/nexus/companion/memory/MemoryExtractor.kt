@@ -1,10 +1,6 @@
 package com.nexus.companion.memory
 
-import com.nexus.companion.AppLanguage
-
 class MemoryExtractor(private val memoryDao: MemoryDao) {
-
-    var language: AppLanguage = AppLanguage.DE
 
     private val patternsDE = listOf(
         ExtractionPattern(
@@ -15,27 +11,27 @@ class MemoryExtractor(private val memoryDao: MemoryDao) {
         ExtractionPattern(
             regex = Regex("""(?:ich (?:arbeite als|bin (?:von beruf)?)|mein (?:beruf|job) ist)\s+(.+?)(?:\.|,|$)""", RegexOption.IGNORE_CASE),
             category = "job",
-            key = "beruf"
+            key = "job"
         ),
         ExtractionPattern(
             regex = Regex("""ich bin (\d{1,3}) (?:jahre? alt|j\.)""", RegexOption.IGNORE_CASE),
             category = "fact",
-            key = "alter"
+            key = "age"
         ),
         ExtractionPattern(
             regex = Regex("""ich (?:wohne|lebe|komme) (?:in|aus)\s+(.+?)(?:\.|,|$)""", RegexOption.IGNORE_CASE),
             category = "fact",
-            key = "wohnort"
+            key = "location"
         ),
         ExtractionPattern(
             regex = Regex("""ich (?:mag|liebe|stehe auf|finde .+ toll)\s+(.+?)(?:\.|,|$)""", RegexOption.IGNORE_CASE),
             category = "interest",
-            key = "mag"
+            key = "likes"
         ),
         ExtractionPattern(
             regex = Regex("""mein(?:e)? lieblings(\w+)\s+(?:ist|sind)\s+(.+?)(?:\.|,|$)""", RegexOption.IGNORE_CASE),
             category = "preference",
-            key = "lieblings_\$1"
+            key = "favorite_\$1"
         ),
         ExtractionPattern(
             regex = Regex("""(?:mein(?:e)? hobbys? (?:ist|sind)|ich mache gerne)\s+(.+?)(?:\.|,|$)""", RegexOption.IGNORE_CASE),
@@ -45,7 +41,7 @@ class MemoryExtractor(private val memoryDao: MemoryDao) {
         ExtractionPattern(
             regex = Regex("""ich habe (?:eine?(?:n)?)\s+(\w+)\s+(?:namens|der|die|das)\s+(\w+)""", RegexOption.IGNORE_CASE),
             category = "fact",
-            key = "haustier"
+            key = "pet"
         ),
     )
 
@@ -92,14 +88,11 @@ class MemoryExtractor(private val memoryDao: MemoryDao) {
         ),
     )
 
-    private val patterns: List<ExtractionPattern>
-        get() = when (language) {
-            AppLanguage.DE -> patternsDE
-            AppLanguage.EN -> patternsEN
-        }
+    // Always run both DE and EN patterns for bilingual support
+    private val allPatterns = patternsDE + patternsEN
 
     suspend fun extractAndStore(userMessage: String) {
-        for (pattern in patterns) {
+        for (pattern in allPatterns) {
             val match = pattern.regex.find(userMessage) ?: continue
 
             val value = if (match.groupValues.size > 2) {

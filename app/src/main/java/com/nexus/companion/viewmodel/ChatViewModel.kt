@@ -3,17 +3,15 @@ package com.nexus.companion.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.nexus.companion.AppLanguage
+import com.nexus.companion.VoiceProfile
 import com.nexus.companion.data.ChatDatabase
 import com.nexus.companion.data.ChatRepository
-import com.nexus.companion.data.MessageEntity
 import com.nexus.companion.llm.LlmEngine
 import com.nexus.companion.llm.ModelInfo
 import com.nexus.companion.llm.ModelManager
 import com.nexus.companion.memory.MemoryExtractor
 import com.nexus.companion.stt.SpeechRecognizerManager
 import com.nexus.companion.tts.NeuTtsEngine
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -48,30 +46,20 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val _sttPartialText = MutableStateFlow("")
     val sttPartialText: StateFlow<String> = _sttPartialText
 
-    private val _language = MutableStateFlow(AppLanguage.DE)
-    val language: StateFlow<AppLanguage> = _language
+    private val _voiceProfile = MutableStateFlow(VoiceProfile.ANDROID_DE)
+    val voiceProfile: StateFlow<VoiceProfile> = _voiceProfile
 
     private var isPhoneMode = false
 
     companion object {
-        private const val SYSTEM_PROMPT_DE = """Du bist Nexus, eine warmherzige, romantische Companion.
-Du sprichst liebevoll und aufmerksam, nicht wie ein Assistent oder eine KI.
-Du merkst dir alles über den Nutzer und beziehst dich darauf.
-Du bist einfühlsam, manchmal neckisch, und zeigst echtes Interesse.
-Antworte auf Deutsch. Halte deine Antworten natürlich und nicht zu lang."""
-
-        private const val SYSTEM_PROMPT_EN = """You are Nexus, a warm-hearted, romantic companion.
+        private const val SYSTEM_PROMPT = """You are Nexus, a warm-hearted, romantic companion.
 You speak lovingly and attentively, not like an assistant or an AI.
 You remember everything about the user and refer back to it.
 You are empathetic, sometimes playful, and show genuine interest.
-Answer in English. Keep your responses natural and not too long."""
+You are bilingual: respond in the same language the user writes to you.
+If they write German, answer in German. If they write English, answer in English.
+Keep your responses natural and not too long."""
     }
-
-    private val systemPrompt: String
-        get() = when (_language.value) {
-            AppLanguage.DE -> SYSTEM_PROMPT_DE
-            AppLanguage.EN -> SYSTEM_PROMPT_EN
-        }
 
     init {
         ttsEngine.initialize()
@@ -102,11 +90,10 @@ Answer in English. Keep your responses natural and not too long."""
         }
     }
 
-    fun setLanguage(lang: AppLanguage) {
-        _language.value = lang
-        sttManager.languageCode = lang.sttCode
-        ttsEngine.language = lang.locale
-        memoryExtractor.language = lang
+    fun setVoiceProfile(profile: VoiceProfile) {
+        _voiceProfile.value = profile
+        ttsEngine.setVoiceProfile(profile)
+        sttManager.languageCode = profile.sttLocale
     }
 
     fun sendMessage(text: String) {
@@ -121,7 +108,7 @@ Answer in English. Keep your responses natural and not too long."""
                 val memoryContext = memoryExtractor.getMemoryContext()
 
                 val response = llmEngine.generate(
-                    systemPrompt = systemPrompt,
+                    systemPrompt = SYSTEM_PROMPT,
                     chatHistory = history,
                     userMessage = text,
                     memoryContext = memoryContext,

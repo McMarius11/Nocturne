@@ -1,8 +1,5 @@
 package com.nexus.companion.ui.screens
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,9 +25,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.DeleteSweep
-import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -55,9 +52,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.nexus.companion.AppLanguage
 import com.nexus.companion.ui.components.MessageBubble
 import com.nexus.companion.ui.components.ModelSwitcherSheet
+import com.nexus.companion.ui.components.VoiceSwitcherSheet
 import com.nexus.companion.ui.theme.NexusBlack
 import com.nexus.companion.ui.theme.NexusCard
 import com.nexus.companion.ui.theme.NexusPrimary
@@ -79,10 +76,11 @@ fun ChatScreen(
     val currentModel by viewModel.currentModelId.collectAsState()
     val downloadedModels by viewModel.downloadedModels.collectAsState()
     val downloadState by viewModel.downloadState.collectAsState()
-    val language by viewModel.language.collectAsState()
+    val voiceProfile by viewModel.voiceProfile.collectAsState()
 
     var inputText by remember { mutableStateOf("") }
     var showModelSwitcher by remember { mutableStateOf(false) }
+    var showVoiceSwitcher by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
@@ -106,8 +104,7 @@ fun ChatScreen(
                 Column {
                     Text("Nexus", fontSize = 18.sp, color = NexusTextPrimary)
                     Text(
-                        text = currentModel
-                            ?: if (language == AppLanguage.DE) "Kein Modell" else "No model",
+                        text = currentModel ?: "No model",
                         fontSize = 12.sp,
                         color = NexusTextDim
                     )
@@ -121,6 +118,9 @@ fun ChatScreen(
                 IconButton(onClick = { showModelSwitcher = true }) {
                     Icon(Icons.Default.Psychology, "Model", tint = NexusPrimary)
                 }
+                IconButton(onClick = { showVoiceSwitcher = true }) {
+                    Icon(Icons.Default.RecordVoiceOver, "Voice", tint = NexusPrimary)
+                }
                 Box {
                     IconButton(onClick = { showMenu = true }) {
                         Icon(Icons.Default.MoreVert, "More", tint = NexusTextSecondary)
@@ -130,23 +130,7 @@ fun ChatScreen(
                         onDismissRequest = { showMenu = false }
                     ) {
                         DropdownMenuItem(
-                            text = {
-                                val target = if (language == AppLanguage.DE) AppLanguage.EN else AppLanguage.DE
-                                Text(target.label)
-                            },
-                            onClick = {
-                                val target = if (language == AppLanguage.DE) AppLanguage.EN else AppLanguage.DE
-                                viewModel.setLanguage(target)
-                                showMenu = false
-                            },
-                            leadingIcon = {
-                                Icon(Icons.Default.Language, null, tint = NexusPrimary)
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = {
-                                Text(if (language == AppLanguage.DE) "Chat loeschen" else "Clear chat")
-                            },
+                            text = { Text("Clear chat") },
                             onClick = {
                                 viewModel.clearChat()
                                 showMenu = false
@@ -181,8 +165,7 @@ fun ChatScreen(
                             Text("Nexus", fontSize = 32.sp, color = NexusPrimary)
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                if (language == AppLanguage.DE) "Schreib mir etwas..."
-                                else "Write me something...",
+                                "Say something... / Schreib mir etwas...",
                                 fontSize = 14.sp,
                                 color = NexusTextDim
                             )
@@ -218,10 +201,7 @@ fun ChatScreen(
                 value = inputText,
                 onValueChange = { inputText = it },
                 placeholder = {
-                    Text(
-                        if (language == AppLanguage.DE) "Nachricht..." else "Message...",
-                        color = NexusTextDim
-                    )
+                    Text("Message...", color = NexusTextDim)
                 },
                 modifier = Modifier
                     .weight(1f)
@@ -264,7 +244,7 @@ fun ChatScreen(
             ) {
                 Icon(
                     Icons.AutoMirrored.Filled.Send,
-                    contentDescription = "Senden",
+                    contentDescription = "Send",
                     tint = if (inputText.isNotBlank()) NexusBlack else NexusTextDim
                 )
             }
@@ -277,12 +257,23 @@ fun ChatScreen(
             currentModelId = currentModel,
             downloadedModels = downloadedModels,
             downloadState = downloadState,
-            language = language,
             onModelSelected = { model ->
                 viewModel.switchModel(model)
                 showModelSwitcher = false
             },
             onDismiss = { showModelSwitcher = false }
+        )
+    }
+
+    // Voice switcher bottom sheet
+    if (showVoiceSwitcher) {
+        VoiceSwitcherSheet(
+            currentProfileId = voiceProfile.id,
+            onProfileSelected = { profile ->
+                viewModel.setVoiceProfile(profile)
+                showVoiceSwitcher = false
+            },
+            onDismiss = { showVoiceSwitcher = false }
         )
     }
 }
