@@ -41,9 +41,7 @@ jobs:
             https://github.com/ggerganov/llama.cpp.git external/llama.cpp
 
       - name: Write local.properties
-        run: |
-          echo "sdk.dir=$ANDROID_HOME" > local.properties
-          echo "ndk.dir=$ANDROID_HOME/ndk/27.2.12479018" >> local.properties
+        run: echo "sdk.dir=$ANDROID_HOME" > local.properties
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4

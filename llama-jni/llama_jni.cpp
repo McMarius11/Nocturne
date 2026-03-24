@@ -99,7 +99,7 @@ Java_com_nexus_companion_llm_LlamaJni_generate(
     tokens.resize(n_prompt_tokens);
 
     // Clear KV cache
-    llama_kv_cache_clear(g_ctx);
+    llama_memory_clear(llama_get_memory(g_ctx), true);
 
     // Process prompt in batch
     llama_batch batch = llama_batch_get_one(tokens.data(), tokens.size());
