@@ -21,10 +21,10 @@ data class ModelInfo(
         val NOROMAID_7B = ModelInfo(
             id = "noromaid-7b",
             displayName = "Noromaid 7B",
-            fileName = "noromaid-7b-v0.1.1.Q4_K_M.gguf",
-            downloadUrl = "https://huggingface.co/TheBloke/Noromaid-7B-v0.1.1-GGUF/resolve/main/noromaid-7b-v0.1.1.Q4_K_M.gguf",
-            sizeGb = 4.1f,
-            sizeBytes = 4_400_000_000L,
+            fileName = "Mistral-Noromaid-7B-1500.q5_k_m.gguf",
+            downloadUrl = "https://huggingface.co/NeverSleep/Noromaid-7b-v0.1.1-GGUF/resolve/main/Mistral-Noromaid-7B-1500.q5_k_m.gguf",
+            sizeGb = 5.1f,
+            sizeBytes = 5_500_000_000L,
             batteryPerHour = 13,
             description = "Standard — warm und romantisch",
             promptFormat = PromptFormat.ALPACA
