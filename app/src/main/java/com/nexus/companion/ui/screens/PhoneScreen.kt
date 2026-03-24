@@ -32,6 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.nexus.companion.AppLanguage
 import com.nexus.companion.stt.SpeechRecognizerManager
 import com.nexus.companion.ui.theme.NexusBlack
 import com.nexus.companion.ui.theme.NexusPrimary
@@ -50,6 +51,8 @@ fun PhoneScreen(
     val sttState by viewModel.sttState.collectAsState()
     val isListening = sttState is SpeechRecognizerManager.SttState.Listening
     val sttText by viewModel.sttPartialText.collectAsState()
+    val language by viewModel.language.collectAsState()
+    val isDE = language == AppLanguage.DE
 
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val pulseScale by infiniteTransition.animateFloat(
@@ -111,10 +114,10 @@ fun PhoneScreen(
 
         Text(
             text = when {
-                isGenerating -> "Nexus denkt nach..."
-                isListening -> "Ich höre zu..."
+                isGenerating -> if (isDE) "Nexus denkt nach..." else "Nexus is thinking..."
+                isListening -> if (isDE) "Ich hoere zu..." else "Listening..."
                 sttText.isNotBlank() -> sttText
-                else -> "Tippe auf das Mikrofon"
+                else -> if (isDE) "Tippe auf das Mikrofon" else "Tap the microphone"
             },
             fontSize = 16.sp,
             color = if (isListening) NexusPrimary else NexusTextDim,

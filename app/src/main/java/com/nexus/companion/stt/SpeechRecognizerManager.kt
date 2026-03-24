@@ -19,9 +19,11 @@ class SpeechRecognizerManager(private val context: Context) {
     private val _result = MutableStateFlow("")
     val result: StateFlow<String> = _result
 
+    var languageCode: String = "de-DE"
+
     fun initialize() {
         if (!SpeechRecognizer.isRecognitionAvailable(context)) {
-            _state.value = SttState.Error("Spracherkennung nicht verfügbar")
+            _state.value = SttState.Error("Speech recognition not available")
             return
         }
         recognizer = SpeechRecognizer.createSpeechRecognizer(context)
@@ -69,7 +71,7 @@ class SpeechRecognizerManager(private val context: Context) {
 
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "de-DE")
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, languageCode)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
         }
@@ -88,16 +90,16 @@ class SpeechRecognizerManager(private val context: Context) {
     }
 
     private fun getErrorMessage(error: Int): String = when (error) {
-        SpeechRecognizer.ERROR_AUDIO -> "Audio-Fehler"
-        SpeechRecognizer.ERROR_CLIENT -> "Client-Fehler"
-        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Keine Berechtigung"
-        SpeechRecognizer.ERROR_NETWORK -> "Netzwerk-Fehler"
-        SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Netzwerk-Timeout"
-        SpeechRecognizer.ERROR_NO_MATCH -> "Nicht erkannt"
-        SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Erkennung beschäftigt"
-        SpeechRecognizer.ERROR_SERVER -> "Server-Fehler"
-        SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "Zeitüberschreitung"
-        else -> "Unbekannter Fehler ($error)"
+        SpeechRecognizer.ERROR_AUDIO -> "Audio error"
+        SpeechRecognizer.ERROR_CLIENT -> "Client error"
+        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "No permission"
+        SpeechRecognizer.ERROR_NETWORK -> "Network error"
+        SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Network timeout"
+        SpeechRecognizer.ERROR_NO_MATCH -> "Not recognized"
+        SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Recognizer busy"
+        SpeechRecognizer.ERROR_SERVER -> "Server error"
+        SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "Speech timeout"
+        else -> "Unknown error ($error)"
     }
 
     sealed class SttState {

@@ -50,7 +50,7 @@ class LlmEngine(private val context: Context) {
         memoryContext: String = "",
         maxTokens: Int = 512
     ): String = withContext(Dispatchers.IO) {
-        if (!jni.isModelLoaded()) return@withContext "[Modell nicht geladen]"
+        if (!jni.isModelLoaded()) return@withContext "[Model not loaded]"
 
         val prompt = buildPrompt(systemPrompt, chatHistory, userMessage, memoryContext)
         jni.generate(prompt, maxTokens)
@@ -68,7 +68,7 @@ class LlmEngine(private val context: Context) {
         sb.append("### Instruction:\n")
         sb.append(systemPrompt)
         if (memoryContext.isNotBlank()) {
-            sb.append("\n\nErinnerungen über den Nutzer:\n")
+            sb.append("\n\nMemories about the user:\n")
             sb.append(memoryContext)
         }
         sb.append("\n\n")

@@ -32,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.nexus.companion.AppLanguage
 import com.nexus.companion.llm.ModelInfo
 import com.nexus.companion.llm.ModelManager
 import com.nexus.companion.ui.theme.BatteryGreen
@@ -51,9 +52,11 @@ fun ModelSwitcherSheet(
     currentModelId: String?,
     downloadedModels: Set<String>,
     downloadState: ModelManager.DownloadState,
+    language: AppLanguage = AppLanguage.DE,
     onModelSelected: (ModelInfo) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val isDE = language == AppLanguage.DE
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(
@@ -69,7 +72,7 @@ fun ModelSwitcherSheet(
                 .padding(bottom = 32.dp)
         ) {
             Text(
-                text = "Modell wählen",
+                text = if (isDE) "Modell waehlen" else "Choose model",
                 fontSize = 20.sp,
                 color = NexusTextPrimary,
                 modifier = Modifier.padding(bottom = 16.dp)
@@ -161,7 +164,7 @@ private fun ModelCard(
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = "~${model.batteryPerHour}%/Std",
+                        text = "~${model.batteryPerHour}%/h",
                         fontSize = 12.sp,
                         color = batteryColor
                     )

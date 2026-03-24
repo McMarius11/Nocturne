@@ -1,55 +1,47 @@
 package com.nexus.companion.memory
 
-/**
- * Extracts facts from user messages and stores them in the memory database.
- * Uses pattern matching to identify personal information.
- */
+import com.nexus.companion.AppLanguage
+
 class MemoryExtractor(private val memoryDao: MemoryDao) {
 
-    private val patterns = listOf(
-        // Name patterns
+    var language: AppLanguage = AppLanguage.DE
+
+    private val patternsDE = listOf(
         ExtractionPattern(
             regex = Regex("""(?:ich (?:heiße|bin|nenne mich)|mein name ist)\s+(\w+)""", RegexOption.IGNORE_CASE),
             category = "name",
             key = "name"
         ),
-        // Job patterns
         ExtractionPattern(
             regex = Regex("""(?:ich (?:arbeite als|bin (?:von beruf)?)|mein (?:beruf|job) ist)\s+(.+?)(?:\.|,|$)""", RegexOption.IGNORE_CASE),
             category = "job",
             key = "beruf"
         ),
-        // Age
         ExtractionPattern(
             regex = Regex("""ich bin (\d{1,3}) (?:jahre? alt|j\.)""", RegexOption.IGNORE_CASE),
             category = "fact",
             key = "alter"
         ),
-        // Location
         ExtractionPattern(
             regex = Regex("""ich (?:wohne|lebe|komme) (?:in|aus)\s+(.+?)(?:\.|,|$)""", RegexOption.IGNORE_CASE),
             category = "fact",
             key = "wohnort"
         ),
-        // Likes
         ExtractionPattern(
             regex = Regex("""ich (?:mag|liebe|stehe auf|finde .+ toll)\s+(.+?)(?:\.|,|$)""", RegexOption.IGNORE_CASE),
             category = "interest",
             key = "mag"
         ),
-        // Favorite things
         ExtractionPattern(
             regex = Regex("""mein(?:e)? lieblings(\w+)\s+(?:ist|sind)\s+(.+?)(?:\.|,|$)""", RegexOption.IGNORE_CASE),
             category = "preference",
-            key = "lieblings_\$1"  // dynamic key
+            key = "lieblings_\$1"
         ),
-        // Hobbies
         ExtractionPattern(
             regex = Regex("""(?:mein(?:e)? hobbys? (?:ist|sind)|ich mache gerne)\s+(.+?)(?:\.|,|$)""", RegexOption.IGNORE_CASE),
             category = "interest",
             key = "hobby"
         ),
-        // Pet
         ExtractionPattern(
             regex = Regex("""ich habe (?:eine?(?:n)?)\s+(\w+)\s+(?:namens|der|die|das)\s+(\w+)""", RegexOption.IGNORE_CASE),
             category = "fact",
@@ -57,12 +49,60 @@ class MemoryExtractor(private val memoryDao: MemoryDao) {
         ),
     )
 
+    private val patternsEN = listOf(
+        ExtractionPattern(
+            regex = Regex("""(?:my name is|i'm called|i am|i'm)\s+(\w+)""", RegexOption.IGNORE_CASE),
+            category = "name",
+            key = "name"
+        ),
+        ExtractionPattern(
+            regex = Regex("""(?:i (?:work as|am) (?:a |an )?|my (?:job|profession) is)\s+(.+?)(?:\.|,|$)""", RegexOption.IGNORE_CASE),
+            category = "job",
+            key = "job"
+        ),
+        ExtractionPattern(
+            regex = Regex("""i(?:'m| am) (\d{1,3}) years? old""", RegexOption.IGNORE_CASE),
+            category = "fact",
+            key = "age"
+        ),
+        ExtractionPattern(
+            regex = Regex("""i (?:live|am) (?:in|from)\s+(.+?)(?:\.|,|$)""", RegexOption.IGNORE_CASE),
+            category = "fact",
+            key = "location"
+        ),
+        ExtractionPattern(
+            regex = Regex("""i (?:like|love|enjoy|adore)\s+(.+?)(?:\.|,|$)""", RegexOption.IGNORE_CASE),
+            category = "interest",
+            key = "likes"
+        ),
+        ExtractionPattern(
+            regex = Regex("""my fav(?:ou?rite)?\s+(\w+)\s+(?:is|are)\s+(.+?)(?:\.|,|$)""", RegexOption.IGNORE_CASE),
+            category = "preference",
+            key = "favorite_\$1"
+        ),
+        ExtractionPattern(
+            regex = Regex("""my hobb(?:y|ies) (?:is|are|include)\s+(.+?)(?:\.|,|$)""", RegexOption.IGNORE_CASE),
+            category = "interest",
+            key = "hobby"
+        ),
+        ExtractionPattern(
+            regex = Regex("""i have (?:a |an )?(\w+)\s+(?:named|called)\s+(\w+)""", RegexOption.IGNORE_CASE),
+            category = "fact",
+            key = "pet"
+        ),
+    )
+
+    private val patterns: List<ExtractionPattern>
+        get() = when (language) {
+            AppLanguage.DE -> patternsDE
+            AppLanguage.EN -> patternsEN
+        }
+
     suspend fun extractAndStore(userMessage: String) {
         for (pattern in patterns) {
             val match = pattern.regex.find(userMessage) ?: continue
 
             val value = if (match.groupValues.size > 2) {
-                // For patterns with multiple groups (like favorites)
                 match.groupValues.drop(1).joinToString(" ")
             } else {
                 match.groupValues[1].trim()

@@ -7,19 +7,20 @@ import android.media.AudioTrack
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.Locale
 
-/**
- * NeuTTS Air engine using GGUF model via llama.cpp JNI.
- * Generates audio tokens from text, then decodes via NeuCodec.
- *
- * Falls back to Android TTS if model not available.
- */
 class NeuTtsEngine(private val context: Context) {
 
     private var audioTrack: AudioTrack? = null
     private var isInitialized = false
     private var fallbackTts: android.speech.tts.TextToSpeech? = null
     private var fallbackReady = false
+
+    var language: Locale = Locale.GERMAN
+        set(value) {
+            field = value
+            fallbackTts?.language = value
+        }
 
     private val ttsModelFile: File
         get() = File(context.cacheDir, "models/neutts-nano-q4.gguf")
@@ -28,15 +29,13 @@ class NeuTtsEngine(private val context: Context) {
         get() = File(context.cacheDir, "models/neucodec.gguf")
 
     fun initialize() {
-        // Initialize Android TTS as fallback
         fallbackTts = android.speech.tts.TextToSpeech(context) { status ->
             if (status == android.speech.tts.TextToSpeech.SUCCESS) {
-                fallbackTts?.language = java.util.Locale.GERMAN
+                fallbackTts?.language = language
                 fallbackReady = true
             }
         }
 
-        // Initialize AudioTrack for NeuTTS
         val sampleRate = 24000
         val bufferSize = AudioTrack.getMinBufferSize(
             sampleRate,
@@ -67,7 +66,6 @@ class NeuTtsEngine(private val context: Context) {
 
     suspend fun speak(text: String) = withContext(Dispatchers.IO) {
         if (!isInitialized) {
-            // Use Android TTS fallback
             if (fallbackReady) {
                 fallbackTts?.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "nexus_tts")
             }

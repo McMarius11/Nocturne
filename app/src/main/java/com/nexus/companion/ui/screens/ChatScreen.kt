@@ -28,6 +28,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material3.DropdownMenu
@@ -54,6 +55,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.nexus.companion.AppLanguage
 import com.nexus.companion.ui.components.MessageBubble
 import com.nexus.companion.ui.components.ModelSwitcherSheet
 import com.nexus.companion.ui.theme.NexusBlack
@@ -77,6 +79,7 @@ fun ChatScreen(
     val currentModel by viewModel.currentModelId.collectAsState()
     val downloadedModels by viewModel.downloadedModels.collectAsState()
     val downloadState by viewModel.downloadState.collectAsState()
+    val language by viewModel.language.collectAsState()
 
     var inputText by remember { mutableStateOf("") }
     var showModelSwitcher by remember { mutableStateOf(false) }
@@ -103,7 +106,8 @@ fun ChatScreen(
                 Column {
                     Text("Nexus", fontSize = 18.sp, color = NexusTextPrimary)
                     Text(
-                        text = currentModel ?: "Kein Modell",
+                        text = currentModel
+                            ?: if (language == AppLanguage.DE) "Kein Modell" else "No model",
                         fontSize = 12.sp,
                         color = NexusTextDim
                     )
@@ -112,21 +116,37 @@ fun ChatScreen(
             colors = TopAppBarDefaults.topAppBarColors(containerColor = NexusBlack),
             actions = {
                 IconButton(onClick = onNavigateToPhone) {
-                    Icon(Icons.Default.Call, "Telefon Modus", tint = NexusPrimary)
+                    Icon(Icons.Default.Call, "Phone Mode", tint = NexusPrimary)
                 }
                 IconButton(onClick = { showModelSwitcher = true }) {
-                    Icon(Icons.Default.Psychology, "Modell wählen", tint = NexusPrimary)
+                    Icon(Icons.Default.Psychology, "Model", tint = NexusPrimary)
                 }
                 Box {
                     IconButton(onClick = { showMenu = true }) {
-                        Icon(Icons.Default.MoreVert, "Mehr", tint = NexusTextSecondary)
+                        Icon(Icons.Default.MoreVert, "More", tint = NexusTextSecondary)
                     }
                     DropdownMenu(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false }
                     ) {
                         DropdownMenuItem(
-                            text = { Text("Chat löschen") },
+                            text = {
+                                val target = if (language == AppLanguage.DE) AppLanguage.EN else AppLanguage.DE
+                                Text(target.label)
+                            },
+                            onClick = {
+                                val target = if (language == AppLanguage.DE) AppLanguage.EN else AppLanguage.DE
+                                viewModel.setLanguage(target)
+                                showMenu = false
+                            },
+                            leadingIcon = {
+                                Icon(Icons.Default.Language, null, tint = NexusPrimary)
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Text(if (language == AppLanguage.DE) "Chat loeschen" else "Clear chat")
+                            },
                             onClick = {
                                 viewModel.clearChat()
                                 showMenu = false
@@ -161,7 +181,8 @@ fun ChatScreen(
                             Text("Nexus", fontSize = 32.sp, color = NexusPrimary)
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                "Schreib mir etwas...",
+                                if (language == AppLanguage.DE) "Schreib mir etwas..."
+                                else "Write me something...",
                                 fontSize = 14.sp,
                                 color = NexusTextDim
                             )
@@ -197,7 +218,10 @@ fun ChatScreen(
                 value = inputText,
                 onValueChange = { inputText = it },
                 placeholder = {
-                    Text("Nachricht...", color = NexusTextDim)
+                    Text(
+                        if (language == AppLanguage.DE) "Nachricht..." else "Message...",
+                        color = NexusTextDim
+                    )
                 },
                 modifier = Modifier
                     .weight(1f)
@@ -253,6 +277,7 @@ fun ChatScreen(
             currentModelId = currentModel,
             downloadedModels = downloadedModels,
             downloadState = downloadState,
+            language = language,
             onModelSelected = { model ->
                 viewModel.switchModel(model)
                 showModelSwitcher = false

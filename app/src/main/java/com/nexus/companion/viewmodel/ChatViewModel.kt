@@ -3,6 +3,7 @@ package com.nexus.companion.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.nexus.companion.AppLanguage
 import com.nexus.companion.data.ChatDatabase
 import com.nexus.companion.data.ChatRepository
 import com.nexus.companion.data.MessageEntity
@@ -47,22 +48,36 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val _sttPartialText = MutableStateFlow("")
     val sttPartialText: StateFlow<String> = _sttPartialText
 
+    private val _language = MutableStateFlow(AppLanguage.DE)
+    val language: StateFlow<AppLanguage> = _language
+
     private var isPhoneMode = false
 
     companion object {
-        private const val SYSTEM_PROMPT = """Du bist Nexus, eine warmherzige, romantische Companion.
+        private const val SYSTEM_PROMPT_DE = """Du bist Nexus, eine warmherzige, romantische Companion.
 Du sprichst liebevoll und aufmerksam, nicht wie ein Assistent oder eine KI.
 Du merkst dir alles über den Nutzer und beziehst dich darauf.
 Du bist einfühlsam, manchmal neckisch, und zeigst echtes Interesse.
 Antworte auf Deutsch. Halte deine Antworten natürlich und nicht zu lang."""
+
+        private const val SYSTEM_PROMPT_EN = """You are Nexus, a warm-hearted, romantic companion.
+You speak lovingly and attentively, not like an assistant or an AI.
+You remember everything about the user and refer back to it.
+You are empathetic, sometimes playful, and show genuine interest.
+Answer in English. Keep your responses natural and not too long."""
     }
+
+    private val systemPrompt: String
+        get() = when (_language.value) {
+            AppLanguage.DE -> SYSTEM_PROMPT_DE
+            AppLanguage.EN -> SYSTEM_PROMPT_EN
+        }
 
     init {
         ttsEngine.initialize()
         sttManager.initialize()
         refreshDownloadedModels()
 
-        // Observe STT state
         viewModelScope.launch {
             sttManager.state.collect { state ->
                 _sttState.value = state
@@ -79,7 +94,6 @@ Antworte auf Deutsch. Halte deine Antworten natürlich und nicht zu lang."""
             }
         }
 
-        // Auto-load default model
         viewModelScope.launch {
             val defaultModel = ModelInfo.NOROMAID_7B
             if (llmEngine.getModelManager().isModelDownloaded(defaultModel)) {
@@ -88,22 +102,26 @@ Antworte auf Deutsch. Halte deine Antworten natürlich und nicht zu lang."""
         }
     }
 
+    fun setLanguage(lang: AppLanguage) {
+        _language.value = lang
+        sttManager.languageCode = lang.sttCode
+        ttsEngine.language = lang.locale
+        memoryExtractor.language = lang
+    }
+
     fun sendMessage(text: String) {
         viewModelScope.launch {
-            // Save user message
             chatRepo.sendMessage("user", text)
 
-            // Extract memories
             memoryExtractor.extractAndStore(text)
 
-            // Generate response
             _isGenerating.value = true
             try {
                 val history = chatRepo.getRecentHistory(10)
                 val memoryContext = memoryExtractor.getMemoryContext()
 
                 val response = llmEngine.generate(
-                    systemPrompt = SYSTEM_PROMPT,
+                    systemPrompt = systemPrompt,
                     chatHistory = history,
                     userMessage = text,
                     memoryContext = memoryContext,
@@ -114,7 +132,6 @@ Antworte auf Deutsch. Halte deine Antworten natürlich und nicht zu lang."""
                 if (cleanResponse.isNotBlank()) {
                     chatRepo.sendMessage("assistant", cleanResponse)
 
-                    // TTS in phone mode
                     if (isPhoneMode) {
                         ttsEngine.speak(cleanResponse)
                     }
@@ -122,7 +139,6 @@ Antworte auf Deutsch. Halte deine Antworten natürlich und nicht zu lang."""
             } finally {
                 _isGenerating.value = false
 
-                // Auto-listen in phone mode
                 if (isPhoneMode) {
                     sttManager.startListening()
                 }
