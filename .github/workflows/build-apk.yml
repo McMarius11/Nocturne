@@ -3,12 +3,12 @@ name: Build NEXUS APK
 on:
   push:
     branches: ["*"]
-  workflow_dispatch:  # Manuell auslösbar über GitHub UI
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -34,7 +34,8 @@ jobs:
       - name: Clone llama.cpp
         run: |
           mkdir -p external
-          git clone --depth 1 https://github.com/ggerganov/llama.cpp.git external/llama.cpp
+          git clone --depth 1 --recurse-submodules --shallow-submodules \
+            https://github.com/ggerganov/llama.cpp.git external/llama.cpp
 
       - name: Write local.properties
         run: |
