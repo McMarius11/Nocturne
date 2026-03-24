@@ -1,0 +1,2 @@
+-keep class com.nexus.companion.llm.LlamaJni { *; }
+-keep class com.nexus.companion.tts.NeuTtsJni { *; }
