@@ -1,11 +1,13 @@
 package com.nexus.companion.viewmodel
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.nexus.companion.VoiceProfile
 import com.nexus.companion.data.ChatDatabase
 import com.nexus.companion.data.ChatRepository
+import com.nexus.companion.data.SettingsStore
 import com.nexus.companion.llm.LlmEngine
 import com.nexus.companion.llm.ModelInfo
 import com.nexus.companion.llm.ModelManager
@@ -22,6 +24,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val chatRepo = ChatRepository(db.messageDao())
     private val memoryExtractor = MemoryExtractor(db.memoryDao())
     private val llmEngine = LlmEngine(application)
+    private val settingsStore = SettingsStore(application)
     val ttsEngine = NeuTtsEngine(application)
     val sttManager = SpeechRecognizerManager(application)
 
@@ -35,6 +38,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _downloadedModels = MutableStateFlow<Set<String>>(emptySet())
     val downloadedModels: StateFlow<Set<String>> = _downloadedModels
+
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage: StateFlow<String?> = _errorMessage
 
     val downloadState = llmEngine.downloadState
 
@@ -52,6 +58,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private var isPhoneMode = false
 
     companion object {
+        private const val TAG = "ChatViewModel"
         private const val SYSTEM_PROMPT = """You are Nexus, a warm-hearted, romantic companion.
 You speak lovingly and attentively, not like an assistant or an AI.
 You remember everything about the user and refer back to it.
@@ -66,6 +73,7 @@ Keep your responses natural and not too long."""
         sttManager.initialize()
         refreshDownloadedModels()
 
+        // Collect STT state
         viewModelScope.launch {
             sttManager.state.collect { state ->
                 _sttState.value = state
@@ -73,6 +81,13 @@ Keep your responses natural and not too long."""
                     if (isPhoneMode) {
                         sendMessage(state.text)
                     }
+                }
+                // Auto-recover from STT errors
+                if (state is SpeechRecognizerManager.SttState.Error) {
+                    Log.w(TAG, "STT error: ${state.message}")
+                    // Reset to idle after error so user can retry
+                    kotlinx.coroutines.delay(1500)
+                    _sttState.value = SpeechRecognizerManager.SttState.Idle
                 }
             }
         }
@@ -82,10 +97,28 @@ Keep your responses natural and not too long."""
             }
         }
 
+        // Restore saved settings and load model
         viewModelScope.launch {
-            val defaultModel = ModelInfo.NOROMAID_7B
-            if (llmEngine.getModelManager().isModelDownloaded(defaultModel)) {
-                loadModelInternal(defaultModel)
+            // Restore voice profile
+            val savedProfileId = settingsStore.getVoiceProfileId()
+            if (savedProfileId != null) {
+                VoiceProfile.findById(savedProfileId)?.let { profile ->
+                    _voiceProfile.value = profile
+                    ttsEngine.setVoiceProfile(profile)
+                    sttManager.languageCode = profile.sttLocale
+                }
+            }
+
+            // Restore and load model
+            val savedModelId = settingsStore.getSelectedModelId()
+            val modelToLoad = if (savedModelId != null) {
+                ModelInfo.findById(savedModelId)
+            } else {
+                ModelInfo.NOROMAID_7B
+            }
+
+            if (modelToLoad != null && llmEngine.getModelManager().isModelDownloaded(modelToLoad)) {
+                loadModelInternal(modelToLoad)
             }
         }
     }
@@ -94,6 +127,9 @@ Keep your responses natural and not too long."""
         _voiceProfile.value = profile
         ttsEngine.setVoiceProfile(profile)
         sttManager.languageCode = profile.sttLocale
+        viewModelScope.launch {
+            settingsStore.setVoiceProfileId(profile.id)
+        }
     }
 
     fun sendMessage(text: String) {
@@ -103,6 +139,7 @@ Keep your responses natural and not too long."""
             memoryExtractor.extractAndStore(text)
 
             _isGenerating.value = true
+            _errorMessage.value = null
             try {
                 val history = chatRepo.getRecentHistory(10)
                 val memoryContext = memoryExtractor.getMemoryContext()
@@ -116,13 +153,19 @@ Keep your responses natural and not too long."""
                 )
 
                 val cleanResponse = response.trim()
-                if (cleanResponse.isNotBlank()) {
+                if (cleanResponse.isNotBlank() && cleanResponse != "[Model not loaded]") {
                     chatRepo.sendMessage("assistant", cleanResponse)
 
                     if (isPhoneMode) {
                         ttsEngine.speak(cleanResponse)
                     }
+                } else if (cleanResponse == "[Model not loaded]") {
+                    _errorMessage.value = "Kein Modell geladen. Bitte wähle ein Modell aus."
                 }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error generating response", e)
+                _errorMessage.value = "Fehler: ${e.message ?: "Unbekannter Fehler"}"
+                chatRepo.sendMessage("assistant", "Entschuldigung, da ist etwas schiefgelaufen. Bitte versuche es nochmal.")
             } finally {
                 _isGenerating.value = false
 
@@ -141,12 +184,19 @@ Keep your responses natural and not too long."""
 
     private suspend fun loadModelInternal(model: ModelInfo) {
         _isGenerating.value = true
+        _errorMessage.value = null
         try {
             val success = llmEngine.loadModel(model)
             if (success) {
                 _currentModelId.value = model.id
+                settingsStore.setSelectedModelId(model.id)
+            } else {
+                _errorMessage.value = "Modell konnte nicht geladen werden"
             }
             refreshDownloadedModels()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error loading model", e)
+            _errorMessage.value = "Fehler beim Laden: ${e.message}"
         } finally {
             _isGenerating.value = false
         }
@@ -164,6 +214,10 @@ Keep your responses natural and not too long."""
         viewModelScope.launch {
             chatRepo.clearChat()
         }
+    }
+
+    fun clearError() {
+        _errorMessage.value = null
     }
 
     fun startPhoneMode() {

@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -25,6 +26,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -68,11 +70,17 @@ fun VoiceSwitcherSheet(
 
             VoiceProfile.ALL_PROFILES.forEach { profile ->
                 val isSelected = profile.id == currentProfileId
+                val isAvailable = !profile.isNeural // Neural TTS not yet implemented
 
                 VoiceCard(
                     profile = profile,
                     isSelected = isSelected,
-                    onClick = { onProfileSelected(profile) }
+                    isAvailable = isAvailable,
+                    onClick = {
+                        if (isAvailable) {
+                            onProfileSelected(profile)
+                        }
+                    }
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -85,6 +93,7 @@ fun VoiceSwitcherSheet(
 private fun VoiceCard(
     profile: VoiceProfile,
     isSelected: Boolean,
+    isAvailable: Boolean,
     onClick: () -> Unit
 ) {
     Surface(
@@ -92,7 +101,8 @@ private fun VoiceCard(
         color = if (isSelected) NexusSurfaceVariant else NexusCard,
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onClick() }
+            .alpha(if (isAvailable) 1f else 0.5f)
+            .clickable(enabled = isAvailable) { onClick() }
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(
@@ -131,7 +141,25 @@ private fun VoiceCard(
                 modifier = Modifier.padding(top = 4.dp)
             )
 
-            if (profile.warning != null) {
+            if (!isAvailable) {
+                Row(
+                    modifier = Modifier.padding(top = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Block,
+                        contentDescription = null,
+                        tint = NexusTextDim,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Noch nicht verfügbar / Not yet available",
+                        fontSize = 12.sp,
+                        color = NexusTextDim
+                    )
+                }
+            } else if (profile.warning != null) {
                 Row(
                     modifier = Modifier.padding(top = 6.dp),
                     verticalAlignment = Alignment.CenterVertically

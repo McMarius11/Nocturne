@@ -7,12 +7,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -33,7 +37,9 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Snackbar
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
@@ -44,6 +50,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -77,6 +84,7 @@ fun ChatScreen(
     val downloadedModels by viewModel.downloadedModels.collectAsState()
     val downloadState by viewModel.downloadState.collectAsState()
     val voiceProfile by viewModel.voiceProfile.collectAsState()
+    val errorMessage by viewModel.errorMessage.collectAsState()
 
     var inputText by remember { mutableStateOf("") }
     var showModelSwitcher by remember { mutableStateOf(false) }
@@ -96,10 +104,13 @@ fun ChatScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(NexusBlack)
+            .statusBarsPadding()
+            .navigationBarsPadding()
             .imePadding()
     ) {
         // Top bar
         TopAppBar(
+            windowInsets = WindowInsets(0),
             title = {
                 Column {
                     Text("Nexus", fontSize = 18.sp, color = NexusTextPrimary)
@@ -247,6 +258,28 @@ fun ChatScreen(
                     contentDescription = "Send",
                     tint = if (inputText.isNotBlank()) NexusBlack else NexusTextDim
                 )
+            }
+        }
+    }
+
+    // Error snackbar
+    if (errorMessage != null) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Snackbar(
+                action = {
+                    TextButton(onClick = { viewModel.clearError() }) {
+                        Text("OK", color = NexusPrimary)
+                    }
+                },
+                containerColor = NexusCard,
+                contentColor = NexusTextPrimary
+            ) {
+                Text(errorMessage ?: "")
             }
         }
     }
