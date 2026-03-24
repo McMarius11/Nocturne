@@ -75,6 +75,7 @@ class ModelManager(private val context: Context) {
         // Retry up to 3 times
         var lastError: String? = null
         for (attempt in 1..3) {
+            var shouldRetry = false
             try {
                 _downloadProgress.value = DownloadState.Downloading(model.id, 0f)
 
@@ -89,72 +90,82 @@ class ModelManager(private val context: Context) {
                     response.close()
                     if (attempt < 3) {
                         delay(attempt * 2000L)
-                        continue
+                        shouldRetry = true
+                    } else {
+                        _downloadProgress.value = DownloadState.Error("Download fehlgeschlagen: $lastError")
+                        return@withContext false
                     }
-                    _downloadProgress.value = DownloadState.Error("Download fehlgeschlagen: $lastError")
-                    return@withContext false
                 }
 
-                val body = response.body ?: run {
-                    lastError = "Leere Antwort vom Server"
-                    if (attempt < 3) {
-                        delay(attempt * 2000L)
-                        continue
+                if (shouldRetry) { /* skip to next attempt */ }
+                else {
+                    val body = response.body
+                    if (body == null) {
+                        lastError = "Leere Antwort vom Server"
+                        if (attempt < 3) {
+                            delay(attempt * 2000L)
+                            shouldRetry = true
+                        } else {
+                            _downloadProgress.value = DownloadState.Error(lastError!!)
+                            return@withContext false
+                        }
                     }
-                    _downloadProgress.value = DownloadState.Error(lastError!!)
-                    return@withContext false
-                }
 
-                val totalBytes = body.contentLength()
-                var downloadedBytes = 0L
+                    if (!shouldRetry) {
+                        val totalBytes = body!!.contentLength()
+                        var downloadedBytes = 0L
 
-                body.byteStream().use { input ->
-                    FileOutputStream(tempFile).use { output ->
-                        val buffer = ByteArray(32768) // 32KB buffer for better throughput
-                        var bytesRead: Int
-                        while (input.read(buffer).also { bytesRead = it } != -1) {
-                            output.write(buffer, 0, bytesRead)
-                            downloadedBytes += bytesRead
-                            if (totalBytes > 0) {
-                                _downloadProgress.value = DownloadState.Downloading(
-                                    model.id,
-                                    downloadedBytes.toFloat() / totalBytes
-                                )
+                        body.byteStream().use { input ->
+                            FileOutputStream(tempFile).use { output ->
+                                val buffer = ByteArray(32768) // 32KB buffer for better throughput
+                                var bytesRead: Int
+                                while (input.read(buffer).also { bytesRead = it } != -1) {
+                                    output.write(buffer, 0, bytesRead)
+                                    downloadedBytes += bytesRead
+                                    if (totalBytes > 0) {
+                                        _downloadProgress.value = DownloadState.Downloading(
+                                            model.id,
+                                            downloadedBytes.toFloat() / totalBytes
+                                        )
+                                    }
+                                }
                             }
+                        }
+
+                        // Verify downloaded size
+                        if (totalBytes > 0 && tempFile.length() < totalBytes * 0.99) {
+                            tempFile.delete()
+                            lastError = "Download unvollständig (${tempFile.length()}/$totalBytes Bytes)"
+                            if (attempt < 3) {
+                                delay(attempt * 2000L)
+                                shouldRetry = true
+                            } else {
+                                _downloadProgress.value = DownloadState.Error(lastError!!)
+                                return@withContext false
+                            }
+                        }
+
+                        if (!shouldRetry) {
+                            // Atomic rename
+                            targetFile.delete()
+                            val renamed = tempFile.renameTo(targetFile)
+                            if (!renamed) {
+                                tempFile.delete()
+                                _downloadProgress.value = DownloadState.Error("Datei konnte nicht gespeichert werden")
+                                return@withContext false
+                            }
+
+                            _downloadProgress.value = DownloadState.Idle
+                            return@withContext true
                         }
                     }
                 }
-
-                // Verify downloaded size
-                if (totalBytes > 0 && tempFile.length() < totalBytes * 0.99) {
-                    tempFile.delete()
-                    lastError = "Download unvollständig (${tempFile.length()}/$totalBytes Bytes)"
-                    if (attempt < 3) {
-                        delay(attempt * 2000L)
-                        continue
-                    }
-                    _downloadProgress.value = DownloadState.Error(lastError!!)
-                    return@withContext false
-                }
-
-                // Atomic rename
-                targetFile.delete()
-                val renamed = tempFile.renameTo(targetFile)
-                if (!renamed) {
-                    tempFile.delete()
-                    _downloadProgress.value = DownloadState.Error("Datei konnte nicht gespeichert werden")
-                    return@withContext false
-                }
-
-                _downloadProgress.value = DownloadState.Idle
-                return@withContext true
 
             } catch (e: Exception) {
                 tempFile.delete()
                 lastError = e.message ?: "Unbekannter Fehler"
                 if (attempt < 3) {
                     delay(attempt * 2000L)
-                    continue
                 }
             }
         }
