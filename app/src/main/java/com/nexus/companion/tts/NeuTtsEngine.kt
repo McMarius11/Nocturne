@@ -29,6 +29,7 @@ class NeuTtsEngine(private val context: Context) {
     // Neural TTS via llama.cpp (OuteTTS / CSM)
     private var csmEngine: CsmEngine? = null
     private var neuralTtsReady = false
+    private var activeTtsModel: TtsModelInfo? = null
 
     private var currentProfile: VoiceProfile = VoiceProfile.ANDROID_DE
 
@@ -40,6 +41,13 @@ class NeuTtsEngine(private val context: Context) {
         fallbackTts = android.speech.tts.TextToSpeech(context) { status ->
             if (status == android.speech.tts.TextToSpeech.SUCCESS) {
                 fallbackTts?.language = currentProfile.ttsLocale
+                // Use VOICE_COMMUNICATION stream so speaker toggle works
+                fallbackTts?.setAudioAttributes(
+                    android.media.AudioAttributes.Builder()
+                        .setUsage(android.media.AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build()
+                )
                 fallbackReady = true
                 Log.d(TAG, "Android TTS ready")
             }
@@ -53,15 +61,34 @@ class NeuTtsEngine(private val context: Context) {
         checkNeuralTtsAvailability()
     }
 
+    /** Check if any neural TTS model is downloaded */
     private fun checkNeuralTtsAvailability() {
-        val ttsModel = File(modelsDir, TtsModelInfo.OUTETTS_500M.fileName)
-        // WavTokenizer vocoder is bundled with OuteTTS GGUF — check for the model file
-        neuralTtsReady = ttsModel.exists()
+        activeTtsModel = TtsModelInfo.ALL_TTS_MODELS.firstOrNull { model ->
+            File(modelsDir, model.fileName).exists()
+        }
+        neuralTtsReady = activeTtsModel != null
 
         if (neuralTtsReady) {
-            Log.i(TAG, "Neural TTS model found: ${ttsModel.name}")
+            Log.i(TAG, "Neural TTS model found: ${activeTtsModel!!.fileName}")
         } else {
             Log.d(TAG, "No neural TTS model, using Android TTS fallback")
+        }
+    }
+
+    /** Set the active TTS model by ID (called when user selects in UI) */
+    fun setTtsModel(modelId: String?) {
+        if (modelId == null) {
+            activeTtsModel = null
+            neuralTtsReady = false
+            csmEngine?.shutdown()
+            return
+        }
+        val model = TtsModelInfo.findById(modelId)
+        if (model != null && File(modelsDir, model.fileName).exists()) {
+            activeTtsModel = model
+            neuralTtsReady = true
+            // Force reload on next speak
+            csmEngine?.shutdown()
         }
     }
 
@@ -79,15 +106,15 @@ class NeuTtsEngine(private val context: Context) {
      */
     suspend fun tryLoadNeuralTts() {
         if (csmEngine?.isReady() == true) return
-        if (!neuralTtsReady) return
+        if (!neuralTtsReady || activeTtsModel == null) return
 
         try {
-            val success = csmEngine?.loadModel(
-                TtsModelInfo.OUTETTS_500M,
-                TtsModelInfo.OUTETTS_500M // vocoder bundled in OuteTTS GGUF
-            ) ?: false
+            val model = activeTtsModel!!
+            // Note: CsmEngine currently requires TTS model + vocoder.
+            // OuteTTS bundles both in one file for now.
+            val success = csmEngine?.loadModel(model, model) ?: false
             if (success) {
-                Log.i(TAG, "Neural TTS model loaded")
+                Log.i(TAG, "Neural TTS model loaded: ${model.id}")
             }
         } catch (e: Exception) {
             Log.w(TAG, "Failed to load neural TTS model", e)

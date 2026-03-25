@@ -130,6 +130,7 @@ Keep your responses natural and not too long."""
             val savedTtsId = settingsStore.getTtsModelId()
             if (savedTtsId != null) {
                 _currentTtsModelId.value = savedTtsId
+                ttsEngine.setTtsModel(savedTtsId)
             }
         }
     }
@@ -327,12 +328,23 @@ Keep your responses natural and not too long."""
             .toSet()
     }
 
+    fun deleteModel(model: ModelInfo) {
+        if (model.id == _currentModelId.value) {
+            llmEngine.unload()
+            _isModelLoaded.value = false
+            _currentModelId.value = null
+        }
+        llmEngine.getModelManager().deleteModel(model)
+        refreshDownloadedModels()
+    }
+
     // ===== TTS Model Management =====
 
     fun selectTtsModel(model: TtsModelInfo) {
         // "system" = revert to Android System TTS
         if (model.id == "system") {
             _currentTtsModelId.value = null
+            ttsEngine.setTtsModel(null)
             viewModelScope.launch { settingsStore.setTtsModelId(null) }
             return
         }
@@ -342,6 +354,7 @@ Keep your responses natural and not too long."""
 
         if (modelFile.exists()) {
             _currentTtsModelId.value = model.id
+            ttsEngine.setTtsModel(model.id) // Connect to TTS pipeline
             viewModelScope.launch { settingsStore.setTtsModelId(model.id) }
         } else {
             // Download the TTS model

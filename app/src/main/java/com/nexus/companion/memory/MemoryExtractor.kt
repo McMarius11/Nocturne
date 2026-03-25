@@ -239,7 +239,7 @@ Conversation:"""
      * Check if it's time to generate a conversation summary.
      * Returns true every ~10 messages.
      */
-    suspend fun shouldSummarize(messageCount: Int): Boolean {
+    fun shouldSummarize(messageCount: Int): Boolean {
         return messageCount > 0 && messageCount % 10 == 0
     }
 

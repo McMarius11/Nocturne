@@ -3,15 +3,23 @@ package com.nexus.companion.stt
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 class SpeechRecognizerManager(private val context: Context) {
 
+    companion object {
+        private const val TAG = "SpeechRecognizerManager"
+    }
+
     private var recognizer: SpeechRecognizer? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     private val _state = MutableStateFlow<SttState>(SttState.Idle)
     val state: StateFlow<SttState> = _state
@@ -26,7 +34,8 @@ class SpeechRecognizerManager(private val context: Context) {
             _state.value = SttState.Error("Speech recognition not available")
             return
         }
-        recognizer = SpeechRecognizer.createSpeechRecognizer(context)
+        // SpeechRecognizer must be created on main thread
+        recognizer = SpeechRecognizer.createSpeechRecognizer(context.applicationContext)
         recognizer?.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) {
                 _state.value = SttState.Listening
@@ -76,17 +85,33 @@ class SpeechRecognizerManager(private val context: Context) {
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
         }
 
-        recognizer?.startListening(intent)
+        // SpeechRecognizer MUST be called on main thread
+        mainHandler.post {
+            try {
+                recognizer?.startListening(intent)
+            } catch (e: Exception) {
+                Log.e(TAG, "startListening failed", e)
+                _state.value = SttState.Error("STT start failed: ${e.message}")
+            }
+        }
     }
 
     fun stopListening() {
-        recognizer?.stopListening()
+        mainHandler.post {
+            try {
+                recognizer?.stopListening()
+            } catch (e: Exception) {
+                Log.e(TAG, "stopListening failed", e)
+            }
+        }
         _state.value = SttState.Idle
     }
 
     fun destroy() {
-        recognizer?.destroy()
-        recognizer = null
+        mainHandler.post {
+            recognizer?.destroy()
+            recognizer = null
+        }
     }
 
     private fun getErrorMessage(error: Int): String = when (error) {

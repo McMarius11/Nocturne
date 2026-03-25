@@ -9,7 +9,6 @@
 
 #include "llama.h"
 #include "common.h"
-#include "chat.h"
 #include "sampling.h"
 
 #define TAG "NexusLlama"
@@ -21,14 +20,12 @@
 static llama_model                  *g_model = nullptr;
 static llama_context                *g_context = nullptr;
 static llama_batch                   g_batch;
-static common_chat_templates_ptr     g_chat_templates;
 static common_sampler               *g_sampler = nullptr;
 static std::mutex                    g_mutex;
 static volatile bool                 g_abort = false;
 static bool                          g_backend_initialized = false;
 
 // Position tracking for context management
-static std::vector<common_chat_msg>  g_chat_msgs;
 static llama_pos                     g_system_prompt_pos = 0;
 static llama_pos                     g_current_pos = 0;
 
@@ -59,7 +56,6 @@ static bool is_valid_utf8(const char *str) {
 }
 
 static void reset_state(bool clear_kv = true) {
-    g_chat_msgs.clear();
     g_system_prompt_pos = 0;
     g_current_pos = 0;
     if (clear_kv && g_context) {
@@ -101,24 +97,6 @@ static int decode_in_batches(const std::vector<llama_token> &tokens, llama_pos s
     return 0;
 }
 
-static std::string format_chat_msg(const std::string &role, const std::string &content) {
-    common_chat_msg msg;
-    msg.role = role;
-    msg.content = content;
-
-    bool has_template = common_chat_templates_was_explicit(g_chat_templates.get());
-    if (has_template) {
-        auto formatted = common_chat_format_single(
-            g_chat_templates.get(), g_chat_msgs, msg, role == "user", false);
-        g_chat_msgs.push_back(msg);
-        LOGD("Formatted %s: %s", role.c_str(), formatted.c_str());
-        return formatted;
-    } else {
-        g_chat_msgs.push_back(msg);
-        return content;
-    }
-}
-
 // ===== JNI Functions =====
 
 extern "C" {
@@ -138,7 +116,6 @@ Java_com_nexus_companion_llm_LlamaJni_loadModel(
         g_context = nullptr;
     }
     if (g_model) { llama_model_free(g_model); g_model = nullptr; }
-    g_chat_templates.reset();
     reset_state(false);
 
     // Initialize backend (only once)
@@ -183,10 +160,7 @@ Java_com_nexus_companion_llm_LlamaJni_loadModel(
     // Initialize batch
     g_batch = llama_batch_init(BATCH_SIZE, 0, 1);
 
-    // Initialize chat templates (auto-detects Gemma, ChatML, etc.)
-    g_chat_templates = common_chat_templates_init(g_model, "");
-    bool has_template = common_chat_templates_was_explicit(g_chat_templates.get());
-    LOGI("Chat template: %s", has_template ? "found" : "none (using raw prompts)");
+    // Prompt formatting is handled in Kotlin (LlmEngine.buildPrompt)
 
     // Initialize sampler
     common_params_sampling sparams;
@@ -300,7 +274,6 @@ Java_com_nexus_companion_llm_LlamaJni_unloadModel(JNIEnv *, jobject) {
         g_context = nullptr;
     }
     if (g_model) { llama_model_free(g_model); g_model = nullptr; }
-    g_chat_templates.reset();
     if (g_backend_initialized) {
         llama_backend_free();
         g_backend_initialized = false;

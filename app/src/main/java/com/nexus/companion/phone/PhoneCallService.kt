@@ -11,6 +11,9 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothProfile
+import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.IBinder
 import android.os.PowerManager
@@ -444,11 +447,52 @@ Keep your responses natural and not too long."""
 
     private fun requestAudioFocus() {
         audioManager?.requestAudioFocus(audioFocusRequest)
+
+        // Auto-connect Bluetooth headset/car if available
+        connectBluetoothAudio()
     }
 
     private fun releaseAudioFocus() {
+        disconnectBluetoothAudio()
         audioManager?.abandonAudioFocusRequest(audioFocusRequest)
         audioManager?.mode = AudioManager.MODE_NORMAL
+    }
+
+    private fun connectBluetoothAudio() {
+        try {
+            val am = audioManager ?: return
+            // Check if a Bluetooth audio device is connected
+            val btDevices = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS).filter {
+                it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                it.type == AudioDeviceInfo.TYPE_BLE_HEADSET
+            }
+            if (btDevices.isNotEmpty()) {
+                am.mode = AudioManager.MODE_IN_COMMUNICATION
+                @Suppress("DEPRECATION")
+                am.startBluetoothSco()
+                am.isBluetoothScoOn = true
+                _isSpeakerOn.value = false
+                manualSpeakerOverride = true // Don't let proximity override BT
+                Log.i(TAG, "Bluetooth audio connected: ${btDevices.first().productName}")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Bluetooth audio connection failed", e)
+        }
+    }
+
+    private fun disconnectBluetoothAudio() {
+        try {
+            val am = audioManager ?: return
+            if (am.isBluetoothScoOn) {
+                am.isBluetoothScoOn = false
+                @Suppress("DEPRECATION")
+                am.stopBluetoothSco()
+                Log.d(TAG, "Bluetooth audio disconnected")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Bluetooth audio disconnect failed", e)
+        }
     }
 
     // --- Notification ---

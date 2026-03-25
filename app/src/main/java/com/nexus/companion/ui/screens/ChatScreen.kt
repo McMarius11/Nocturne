@@ -421,10 +421,12 @@ fun ChatScreen(
             downloadState = downloadState,
             onModelSelected = { model ->
                 viewModel.switchModel(model)
-                // Only close if model is already downloaded
                 if (model.id in downloadedModels) {
                     showModelSwitcher = false
                 }
+            },
+            onModelDeleted = { model ->
+                viewModel.deleteModel(model)
             },
             onDismiss = { showModelSwitcher = false }
         )

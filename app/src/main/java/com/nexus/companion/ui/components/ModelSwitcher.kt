@@ -1,7 +1,9 @@
 package com.nexus.companion.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +29,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,9 +58,12 @@ fun ModelSwitcherSheet(
     downloadedModels: Set<String>,
     downloadState: ModelManager.DownloadState,
     onModelSelected: (ModelInfo) -> Unit,
+    onModelDeleted: ((ModelInfo) -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var confirmDownload by remember { mutableStateOf<ModelInfo?>(null) }
+    var confirmDelete by remember { mutableStateOf<ModelInfo?>(null) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -89,7 +98,17 @@ fun ModelSwitcherSheet(
                     downloadProgress = if (isDownloading)
                         (downloadState as ModelManager.DownloadState.Downloading).progress
                     else 0f,
-                    onClick = { onModelSelected(model) }
+                    onClick = {
+                        if (isDownloaded) {
+                            onModelSelected(model)
+                        } else {
+                            // Show download confirmation for non-downloaded models
+                            confirmDownload = model
+                        }
+                    },
+                    onLongClick = if (isDownloaded && !isSelected) {
+                        { confirmDelete = model }
+                    } else null
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -105,8 +124,65 @@ fun ModelSwitcherSheet(
             }
         }
     }
+
+    // Download confirmation dialog
+    confirmDownload?.let { model ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmDownload = null },
+            title = { Text("${model.displayName} herunterladen?", color = NexusTextPrimary) },
+            text = {
+                Text(
+                    "Größe: ${model.sizeGb} GB\nDas Modell wird im Hintergrund heruntergeladen.",
+                    color = NexusTextSecondary
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    onModelSelected(model)
+                    confirmDownload = null
+                }) {
+                    Text("Herunterladen", color = NexusPrimary)
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { confirmDownload = null }) {
+                    Text("Abbrechen", color = NexusTextDim)
+                }
+            },
+            containerColor = NexusCard
+        )
+    }
+
+    // Delete confirmation dialog
+    confirmDelete?.let { model ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmDelete = null },
+            title = { Text("${model.displayName} löschen?", color = NexusTextPrimary) },
+            text = {
+                Text(
+                    "${model.sizeGb} GB Speicher werden freigegeben.",
+                    color = NexusTextSecondary
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    onModelDeleted?.invoke(model)
+                    confirmDelete = null
+                }) {
+                    Text("Löschen", color = BatteryRed)
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { confirmDelete = null }) {
+                    Text("Abbrechen", color = NexusTextDim)
+                }
+            },
+            containerColor = NexusCard
+        )
+    }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ModelCard(
     model: ModelInfo,
@@ -114,7 +190,8 @@ private fun ModelCard(
     isDownloaded: Boolean,
     isDownloading: Boolean,
     downloadProgress: Float,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null
 ) {
     val batteryColor = when {
         model.batteryPerHour <= 10 -> BatteryGreen
@@ -127,7 +204,11 @@ private fun ModelCard(
         color = if (isSelected) NexusSurfaceVariant else NexusCard,
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(enabled = !isDownloading) { onClick() }
+            .combinedClickable(
+                enabled = !isDownloading,
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(
