@@ -18,8 +18,8 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 # This is robust against internal restructuring of llama.cpp
 add_subdirectory(${LLAMA_CPP_DIR} ${CMAKE_CURRENT_BINARY_DIR}/llama.cpp)
 
-# JNI bridge shared library
-add_library(nexus-llama SHARED llama_jni.cpp)
+# JNI bridge shared library (LLM + TTS)
+add_library(nexus-llama SHARED llama_jni.cpp tts_jni.cpp)
 
 # The llama target exports its include directories transitively
 target_link_libraries(nexus-llama PRIVATE llama android log)

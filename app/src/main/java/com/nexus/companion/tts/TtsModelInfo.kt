@@ -73,12 +73,51 @@ data class TtsModelInfo(
             description = "Deutsch + Englisch — beste Qualität, 1B"
         )
 
+        // --- Sesame CSM (highest quality, experimental — pending llama.cpp support) ---
+
+        val SESAME_CSM_BACKBONE = TtsModelInfo(
+            id = "sesame-csm-backbone",
+            displayName = "Sesame CSM Backbone",
+            fileName = "sesame-csm-backbone.gguf",
+            downloadUrl = "https://huggingface.co/ggml-org/sesame-csm-1b-GGUF/resolve/main/sesame-csm-backbone.gguf",
+            sizeBytes = 900_000_000L,
+            languages = listOf("en"),
+            description = "Sesame CSM Backbone — 1B Parameter (benötigt Codec)"
+        )
+
+        val SESAME_CSM_DECODER = TtsModelInfo(
+            id = "sesame-csm-decoder",
+            displayName = "Sesame CSM Decoder",
+            fileName = "sesame-csm-decoder0.gguf",
+            downloadUrl = "https://huggingface.co/ggml-org/sesame-csm-1b-GGUF/resolve/main/sesame-csm-decoder0.gguf",
+            sizeBytes = 100_000_000L,
+            languages = listOf("en"),
+            description = "Sesame CSM Audio-Decoder — 100M Parameter"
+        )
+
+        val SESAME_MIMI_CODEC = TtsModelInfo(
+            id = "sesame-mimi-codec",
+            displayName = "Mimi Audio Codec",
+            fileName = "kyutai-mimi.gguf",
+            downloadUrl = "https://huggingface.co/ggml-org/sesame-csm-1b-GGUF/resolve/main/kyutai-mimi.gguf",
+            sizeBytes = 226_000_000L,
+            languages = listOf("en"),
+            description = "Kyutai Mimi Codec — Audio-Dekodierung für CSM"
+        )
+
         val ALL_TTS_MODELS = listOf(
-            NEUTTS_NANO_EN,
-            NEUTTS_NANO_DE,
-            KOKORO_82M,
             OUTETTS_500M,
-            OUTETTS_1B
+            OUTETTS_1B,
+            KOKORO_82M,
+            NEUTTS_NANO_EN,
+            NEUTTS_NANO_DE
+        )
+
+        /** CSM components (separate from ALL_TTS_MODELS — experimental) */
+        val CSM_COMPONENTS = listOf(
+            SESAME_CSM_BACKBONE,
+            SESAME_CSM_DECODER,
+            SESAME_MIMI_CODEC
         )
 
         fun findById(id: String): TtsModelInfo? = ALL_TTS_MODELS.find { it.id == id }
