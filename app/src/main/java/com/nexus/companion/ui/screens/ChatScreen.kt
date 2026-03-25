@@ -30,6 +30,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material3.DropdownMenu
@@ -85,6 +86,7 @@ fun ChatScreen(
     val downloadState by viewModel.downloadState.collectAsState()
     val voiceProfile by viewModel.voiceProfile.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
+    val isModelLoaded by viewModel.isModelLoaded.collectAsState()
 
     var inputText by remember { mutableStateOf("") }
     var showModelSwitcher by remember { mutableStateOf(false) }
@@ -115,9 +117,13 @@ fun ChatScreen(
                 Column {
                     Text("Nexus", fontSize = 18.sp, color = NexusTextPrimary)
                     Text(
-                        text = currentModel ?: "No model",
+                        text = when {
+                            currentModel == null -> "Kein Modell"
+                            isModelLoaded -> currentModel!!
+                            else -> "${currentModel} (aus)"
+                        },
                         fontSize = 12.sp,
-                        color = NexusTextDim
+                        color = if (isModelLoaded) NexusTextDim else NexusSecondary
                     )
                 }
             },
@@ -141,7 +147,24 @@ fun ChatScreen(
                         onDismissRequest = { showMenu = false }
                     ) {
                         DropdownMenuItem(
-                            text = { Text("Clear chat") },
+                            text = {
+                                Text(if (isModelLoaded) "LLM ausschalten" else "LLM einschalten")
+                            },
+                            onClick = {
+                                viewModel.toggleModelLoaded()
+                                showMenu = false
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    if (isModelLoaded) Icons.Default.PowerSettingsNew
+                                    else Icons.Default.PowerSettingsNew,
+                                    null,
+                                    tint = if (isModelLoaded) NexusPrimary else NexusSecondary
+                                )
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Chat löschen") },
                             onClick = {
                                 viewModel.clearChat()
                                 showMenu = false
