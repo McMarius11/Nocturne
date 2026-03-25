@@ -1,11 +1,17 @@
 package com.nexus.companion.tts
 
 /**
- * Available TTS models for neural voice synthesis.
+ * Available audio/TTS models.
  *
- * NeuTTS Nano: Purpose-built for mobile, separate models per language (~195 MB each).
- * Kokoro: Multilingual (v1.0+), single model, ~198 MB, DE+EN in one file.
- * OuteTTS: Multilingual, larger but high quality, DE+EN+4 more languages.
+ * LFM2.5-Audio: End-to-end audio-language model (ASR+TTS+Chat in one model).
+ *               Requires 4 GGUF files. llama.cpp support pending PR #18641.
+ *               DE+EN+6 languages, 1.5B params, ~855 MB total (Q4_0).
+ *
+ * Sesame CSM:   Conversational speech model, highest quality voice.
+ *               Requires 3 GGUF files. llama.cpp support pending Issue #12392.
+ *               EN only, 1B params.
+ *
+ * Other models: OuteTTS, Kokoro, NeuTTS — various compatibility levels.
  */
 data class TtsModelInfo(
     val id: String,
@@ -17,63 +23,53 @@ data class TtsModelInfo(
     val description: String
 ) {
     companion object {
-        // --- NeuTTS Nano (best for mobile, already integrated in NeuTtsEngine) ---
 
-        val NEUTTS_NANO_EN = TtsModelInfo(
-            id = "neutts-nano-en",
-            displayName = "NeuTTS Nano (English)",
-            fileName = "neutts-nano-Q4_0.gguf",
-            downloadUrl = "https://huggingface.co/neuphonic/neutts-nano-q4-gguf/resolve/main/neutts-nano-Q4_0.gguf",
-            sizeBytes = 195_000_000L,
-            languages = listOf("en"),
-            description = "Englisch — ultraleicht, optimiert für Mobile"
+        // ===== Liquid AI LFM2.5-Audio (best option — pending llama.cpp PR #18641) =====
+        // End-to-end: Audio-In + Audio-Out, no separate ASR/TTS needed.
+        // 8x faster than Sesame's Mimi on mobile CPU.
+
+        val LFM25_AUDIO_MODEL = TtsModelInfo(
+            id = "lfm25-audio",
+            displayName = "LFM2.5 Audio (1.5B)",
+            fileName = "LFM2.5-Audio-1.5B-Q4_0.gguf",
+            downloadUrl = "https://huggingface.co/LiquidAI/LFM2.5-Audio-1.5B-GGUF/resolve/main/LFM2.5-Audio-1.5B-Q4_0.gguf",
+            sizeBytes = 696_000_000L,
+            languages = listOf("de", "en", "ar", "zh", "fr", "ja", "ko", "es"),
+            description = "End-to-End Audio — DE+EN, ASR+TTS+Chat in einem Modell (696 MB)"
         )
 
-        val NEUTTS_NANO_DE = TtsModelInfo(
-            id = "neutts-nano-de",
-            displayName = "NeuTTS Nano (Deutsch)",
-            fileName = "neutts-nano-german-Q4_0.gguf",
-            downloadUrl = "https://huggingface.co/neuphonic/neutts-nano-german-q4-gguf/resolve/main/neutts-nano-german-Q4_0.gguf",
-            sizeBytes = 195_000_000L,
-            languages = listOf("de"),
-            description = "Deutsch — ultraleicht, optimiert für Mobile"
+        val LFM25_AUDIO_MMPROJ = TtsModelInfo(
+            id = "lfm25-mmproj",
+            displayName = "LFM2.5 Audio-Projektor",
+            fileName = "mmproj-LFM2.5-Audio-1.5B-Q4_0.gguf",
+            downloadUrl = "https://huggingface.co/LiquidAI/LFM2.5-Audio-1.5B-GGUF/resolve/main/mmproj-LFM2.5-Audio-1.5B-Q4_0.gguf",
+            sizeBytes = 50_500_000L,
+            languages = listOf("de", "en"),
+            description = "Audio-Projektor für LFM2.5 (51 MB)"
         )
 
-        // --- Kokoro (single model, multilingual DE+EN) ---
-
-        val KOKORO_82M = TtsModelInfo(
-            id = "kokoro-82m",
-            displayName = "Kokoro 82M",
-            fileName = "Kokoro_no_espeak_Q4.gguf",
-            downloadUrl = "https://huggingface.co/mmwillet2/Kokoro_GGUF/resolve/main/Kokoro_no_espeak_Q4.gguf",
-            sizeBytes = 198_000_000L,
-            languages = listOf("en", "de"),
-            description = "Deutsch + Englisch — ein Modell, 82M Parameter"
+        val LFM25_AUDIO_VOCODER = TtsModelInfo(
+            id = "lfm25-vocoder",
+            displayName = "LFM2.5 Vocoder",
+            fileName = "vocoder-LFM2.5-Audio-1.5B-Q4_0.gguf",
+            downloadUrl = "https://huggingface.co/LiquidAI/LFM2.5-Audio-1.5B-GGUF/resolve/main/vocoder-LFM2.5-Audio-1.5B-Q4_0.gguf",
+            sizeBytes = 109_000_000L,
+            languages = listOf("de", "en"),
+            description = "Audio-Decoder/Vocoder für LFM2.5 (109 MB)"
         )
 
-        // --- OuteTTS (high quality multilingual) ---
-
-        val OUTETTS_500M = TtsModelInfo(
-            id = "outetts-0.3-500m",
-            displayName = "OuteTTS 0.3 (500M)",
-            fileName = "OuteTTS-0.3-500M-Q4_K_M.gguf",
-            downloadUrl = "https://huggingface.co/OuteAI/OuteTTS-0.3-500M-GGUF/resolve/main/OuteTTS-0.3-500M-Q4_K_M.gguf",
-            sizeBytes = 403_000_000L,
-            languages = listOf("de", "en", "fr", "jp", "ko", "zh"),
-            description = "Deutsch + Englisch + 4 Sprachen — 500M"
+        val LFM25_AUDIO_TOKENIZER = TtsModelInfo(
+            id = "lfm25-tokenizer",
+            displayName = "LFM2.5 Speaker-Datei",
+            fileName = "tokenizer-LFM2.5-Audio-1.5B-Q4_0.gguf",
+            downloadUrl = "https://huggingface.co/LiquidAI/LFM2.5-Audio-1.5B-GGUF/resolve/main/tokenizer-LFM2.5-Audio-1.5B-Q4_0.gguf",
+            sizeBytes = 5_000_000L,
+            languages = listOf("de", "en"),
+            description = "Speaker/Tokenizer für LFM2.5"
         )
 
-        val OUTETTS_1B = TtsModelInfo(
-            id = "outetts-0.3-1b",
-            displayName = "OuteTTS 0.3 (1B)",
-            fileName = "OuteTTS-0.3-1B-Q4_K_M.gguf",
-            downloadUrl = "https://huggingface.co/OuteAI/OuteTTS-0.3-1B-GGUF/resolve/main/OuteTTS-0.3-1B-Q4_K_M.gguf",
-            sizeBytes = 800_000_000L,
-            languages = listOf("de", "en", "fr", "jp", "ko", "zh"),
-            description = "Deutsch + Englisch — beste Qualität, 1B"
-        )
-
-        // --- Sesame CSM (highest quality, experimental — pending llama.cpp support) ---
+        // ===== Sesame CSM (experimental — pending llama.cpp Issue #12392) =====
+        // Highest quality voice, but EN only and still in draft.
 
         val SESAME_CSM_BACKBONE = TtsModelInfo(
             id = "sesame-csm-backbone",
@@ -82,7 +78,7 @@ data class TtsModelInfo(
             downloadUrl = "https://huggingface.co/ggml-org/sesame-csm-1b-GGUF/resolve/main/sesame-csm-backbone.gguf",
             sizeBytes = 900_000_000L,
             languages = listOf("en"),
-            description = "Sesame CSM Backbone — 1B Parameter (benötigt Codec)"
+            description = "Sesame CSM Backbone — 1B Parameter"
         )
 
         val SESAME_CSM_DECODER = TtsModelInfo(
@@ -105,21 +101,35 @@ data class TtsModelInfo(
             description = "Kyutai Mimi Codec — Audio-Dekodierung für CSM"
         )
 
+        // ===== Models shown in UI for download =====
+
         val ALL_TTS_MODELS = listOf(
-            OUTETTS_500M,
-            OUTETTS_1B,
-            KOKORO_82M,
-            NEUTTS_NANO_EN,
-            NEUTTS_NANO_DE
+            LFM25_AUDIO_MODEL   // Primary recommendation
         )
 
-        /** CSM components (separate from ALL_TTS_MODELS — experimental) */
+        /** LFM2.5 companion files (auto-downloaded with main model) */
+        val LFM25_COMPONENTS = listOf(
+            LFM25_AUDIO_MMPROJ,
+            LFM25_AUDIO_VOCODER,
+            LFM25_AUDIO_TOKENIZER
+        )
+
+        /** Sesame CSM components (experimental) */
         val CSM_COMPONENTS = listOf(
             SESAME_CSM_BACKBONE,
             SESAME_CSM_DECODER,
             SESAME_MIMI_CODEC
         )
 
-        fun findById(id: String): TtsModelInfo? = ALL_TTS_MODELS.find { it.id == id }
+        /** All experimental models (shown in a separate section) */
+        val EXPERIMENTAL_MODELS = listOf(
+            SESAME_CSM_BACKBONE
+        )
+
+        fun findById(id: String): TtsModelInfo? {
+            return ALL_TTS_MODELS.find { it.id == id }
+                ?: LFM25_COMPONENTS.find { it.id == id }
+                ?: CSM_COMPONENTS.find { it.id == id }
+        }
     }
 }

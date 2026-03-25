@@ -141,6 +141,27 @@ fun VoiceSwitcherSheet(
                 )
                 Spacer(modifier = Modifier.height(6.dp))
             }
+
+            // Experimental section
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "Experimentell (coming soon)",
+                fontSize = 14.sp,
+                color = NexusTextDim,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+
+            TtsModelInfo.EXPERIMENTAL_MODELS.forEach { model ->
+                TtsModelCard(
+                    model = model,
+                    isSelected = false,
+                    isDownloaded = false,
+                    isDownloading = false,
+                    downloadProgress = 0f,
+                    onClick = { /* not yet available */ }
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+            }
         }
     }
 }
