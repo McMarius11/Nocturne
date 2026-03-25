@@ -17,7 +17,6 @@ import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.nexus.companion.MainActivity
-import com.nexus.companion.VoiceProfile
 import com.nexus.companion.data.ChatDatabase
 import com.nexus.companion.data.ChatRepository
 import com.nexus.companion.llm.LlmEngine
@@ -281,6 +280,12 @@ Keep your responses natural and not too long."""
     }
 
     private fun handleUserSpeech(text: String) {
+        // FIX #7: Prevent concurrent LLM calls from rapid STT results
+        if (_isGenerating.value) {
+            Log.d(TAG, "Already generating, ignoring STT result: $text")
+            return
+        }
+
         serviceScope.launch {
             _isGenerating.value = true
             updateNotification("Nexus denkt nach...")

@@ -66,6 +66,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val _downloadedTtsModels = MutableStateFlow<Set<String>>(emptySet())
     val downloadedTtsModels: StateFlow<Set<String>> = _downloadedTtsModels
 
+    // TTS downloads share the same DownloadService but state is separate
     val ttsDownloadState: StateFlow<ModelManager.DownloadState> = llmEngine.downloadState
 
     private val _voiceProfile = MutableStateFlow(VoiceProfile.ANDROID_DE)
@@ -104,11 +105,16 @@ Keep your responses natural and not too long."""
                 }
             }
 
+            // FIX #1: Use separate key for LLM model (not shared with TTS)
             val savedModelId = settingsStore.getSelectedModelId()
-            val modelToLoad = if (savedModelId != null) {
+            val modelToLoad = if (savedModelId != null && !savedModelId.startsWith("tts_")) {
                 ModelInfo.findById(savedModelId)
             } else {
-                ModelInfo.NOROMAID_7B
+                // No valid LLM model saved, try first downloaded model
+                val downloaded = ModelInfo.ALL_MODELS.firstOrNull {
+                    llmEngine.getModelManager().isModelDownloaded(it)
+                }
+                downloaded
             }
 
             if (modelToLoad != null && llmEngine.getModelManager().isModelDownloaded(modelToLoad)) {
@@ -119,10 +125,6 @@ Keep your responses natural and not too long."""
 
     // ===== LLM Manual Toggle =====
 
-    /**
-     * Manually toggle the LLM on or off.
-     * When off: frees 2-8 GB RAM. When on: reloads the selected model.
-     */
     fun toggleModelLoaded() {
         if (_isModelLoaded.value) {
             unloadModel()
@@ -139,9 +141,17 @@ Keep your responses natural and not too long."""
     }
 
     private fun reloadModel() {
-        val modelId = _currentModelId.value ?: return
-        val model = ModelInfo.findById(modelId) ?: return
-        if (!llmEngine.getModelManager().isModelDownloaded(model)) return
+        val modelId = _currentModelId.value
+        if (modelId == null) {
+            // FIX #5: Give feedback when no model is selected
+            _errorMessage.value = "Kein Modell ausgewählt. Bitte wähle zuerst ein Modell."
+            return
+        }
+        val model = ModelInfo.findById(modelId)
+        if (model == null || !llmEngine.getModelManager().isModelDownloaded(model)) {
+            _errorMessage.value = "Modell nicht verfügbar. Bitte lade es zuerst herunter."
+            return
+        }
 
         Log.i(TAG, "Reloading model: $modelId")
         viewModelScope.launch {
@@ -154,7 +164,7 @@ Keep your responses natural and not too long."""
     private fun resetIdleTimer() {
         cancelIdleTimer()
         if (!_isModelLoaded.value) return
-        if (isPhoneMode) return // Don't idle-unload during phone mode
+        if (isPhoneMode) return
 
         idleTimerJob = viewModelScope.launch {
             delay(IDLE_TIMEOUT_MS)
@@ -162,6 +172,8 @@ Keep your responses natural and not too long."""
                 Log.i(TAG, "Idle timeout (${IDLE_TIMEOUT_MS / 60000} min) — unloading LLM")
                 llmEngine.unload()
                 _isModelLoaded.value = false
+                // FIX #6: _currentModelId stays set so user sees "(aus)" in TopBar
+                // and can re-enable with toggle
             }
         }
     }
@@ -185,7 +197,13 @@ Keep your responses natural and not too long."""
     // ===== Chat =====
 
     fun sendMessage(text: String) {
-        resetIdleTimer() // User is active — restart idle timer
+        // FIX #3: Check if model is loaded BEFORE saving message
+        if (!llmEngine.isReady()) {
+            _errorMessage.value = "LLM ist ausgeschaltet. Bitte schalte es ein (⋮ Menü → LLM einschalten)."
+            return
+        }
+
+        resetIdleTimer()
 
         viewModelScope.launch {
             chatRepo.sendMessage("user", text)
@@ -235,7 +253,7 @@ Keep your responses natural and not too long."""
                 chatRepo.sendMessage("assistant", "Entschuldigung, da ist etwas schiefgelaufen. Bitte versuche es nochmal.")
             } finally {
                 _isGenerating.value = false
-                resetIdleTimer() // Restart timer after response
+                resetIdleTimer()
             }
         }
     }
@@ -286,10 +304,12 @@ Keep your responses natural and not too long."""
 
         if (modelFile.exists()) {
             _currentTtsModelId.value = model.id
+            // FIX #1: Use separate settings key for TTS model
             viewModelScope.launch {
-                settingsStore.setSelectedModelId("tts_${model.id}")
+                settingsStore.setVoiceProfileId("tts:${model.id}")
             }
         } else {
+            // Download the TTS model
             val modelInfo = ModelInfo(
                 id = model.id,
                 displayName = model.displayName,
@@ -327,8 +347,13 @@ Keep your responses natural and not too long."""
     // ===== Phone Mode =====
 
     fun startPhoneMode() {
+        // FIX #4: Check if model is loaded before starting phone mode
+        if (!llmEngine.isReady() && _currentModelId.value == null) {
+            _errorMessage.value = "Kein Modell geladen. Bitte lade zuerst ein Modell."
+            return
+        }
         isPhoneMode = true
-        cancelIdleTimer() // Don't idle-unload during phone mode
+        cancelIdleTimer()
         PhoneCallService.start(getApplication(), _currentModelId.value)
     }
 
