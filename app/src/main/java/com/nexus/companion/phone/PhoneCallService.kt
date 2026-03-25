@@ -68,6 +68,9 @@ class PhoneCallService : Service(), SensorEventListener {
         private val _isSpeakerOn = MutableStateFlow(true) // Speaker on by default
         val isSpeakerOn: StateFlow<Boolean> = _isSpeakerOn
 
+        private val _isSpeaking = MutableStateFlow(false) // TTS is playing audio
+        val isSpeaking: StateFlow<Boolean> = _isSpeaking
+
         fun start(context: Context, modelId: String? = null) {
             val intent = Intent(context, PhoneCallService::class.java).apply {
                 action = ACTION_START
@@ -213,6 +216,7 @@ Keep your responses natural and not too long."""
         _sttState.value = SpeechRecognizerManager.SttState.Idle
         _sttPartialText.value = ""
         _isGenerating.value = false
+        _isSpeaking.value = false
 
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -315,8 +319,10 @@ Keep your responses natural and not too long."""
                     memoryExtractor.extractFromAssistant(cleanResponse)
 
                     // Speak the response
+                    _isSpeaking.value = true
                     updateNotification("Nexus spricht...")
                     ttsEngine.speak(cleanResponse)
+                    _isSpeaking.value = false
 
                     // Wait a moment for TTS to finish, then resume listening
                     delay(500)

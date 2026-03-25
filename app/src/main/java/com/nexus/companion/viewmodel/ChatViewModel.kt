@@ -63,6 +63,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     val sttPartialText: StateFlow<String> = PhoneCallService.sttPartialText
     val phoneIsGenerating: StateFlow<Boolean> = PhoneCallService.isGenerating
     val isSpeakerOn: StateFlow<Boolean> = PhoneCallService.isSpeakerOn
+    val isSpeaking: StateFlow<Boolean> = PhoneCallService.isSpeaking
 
     // TTS model state
     private val _currentTtsModelId = MutableStateFlow<String?>(null)
