@@ -99,6 +99,16 @@ Keep your responses natural and not too long."""
         refreshDownloadedModels()
         refreshDownloadedTtsModels()
 
+        // Auto-refresh downloaded models when download state changes
+        viewModelScope.launch {
+            llmEngine.downloadState.collect { state ->
+                if (state is ModelManager.DownloadState.Idle) {
+                    refreshDownloadedModels()
+                    refreshDownloadedTtsModels()
+                }
+            }
+        }
+
         // Restore saved settings and load model
         viewModelScope.launch {
             val savedProfileId = settingsStore.getVoiceProfileId()
