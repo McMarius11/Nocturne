@@ -15,10 +15,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -26,11 +29,13 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nexus.companion.VoiceProfile
+import com.nexus.companion.llm.ModelManager
+import com.nexus.companion.tts.TtsModelInfo
+import com.nexus.companion.ui.theme.BatteryGreen
 import com.nexus.companion.ui.theme.BatteryYellow
 import com.nexus.companion.ui.theme.NexusBlack
 import com.nexus.companion.ui.theme.NexusCard
@@ -44,7 +49,11 @@ import com.nexus.companion.ui.theme.NexusTextSecondary
 @Composable
 fun VoiceSwitcherSheet(
     currentProfileId: String,
+    currentTtsModelId: String?,
+    downloadedTtsModels: Set<String>,
+    ttsDownloadState: ModelManager.DownloadState,
     onProfileSelected: (VoiceProfile) -> Unit,
+    onTtsModelSelected: (TtsModelInfo) -> Unit,
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -61,29 +70,72 @@ fun VoiceSwitcherSheet(
                 .padding(horizontal = 20.dp, vertical = 8.dp)
                 .padding(bottom = 32.dp)
         ) {
+            // --- Voice Profile Section ---
             Text(
-                text = "Voice / Stimme",
+                text = "Sprache / Language",
                 fontSize = 20.sp,
                 color = NexusTextPrimary,
-                modifier = Modifier.padding(bottom = 16.dp)
+                modifier = Modifier.padding(bottom = 12.dp)
             )
 
-            VoiceProfile.ALL_PROFILES.forEach { profile ->
+            VoiceProfile.ALL_PROFILES.filter { !it.isNeural }.forEach { profile ->
                 val isSelected = profile.id == currentProfileId
-                val isAvailable = !profile.isNeural // Neural TTS not yet implemented
 
                 VoiceCard(
-                    profile = profile,
+                    name = profile.displayName,
+                    description = profile.description,
+                    languages = profile.languages.joinToString(" + ") { it.uppercase() },
                     isSelected = isSelected,
-                    isAvailable = isAvailable,
-                    onClick = {
-                        if (isAvailable) {
-                            onProfileSelected(profile)
-                        }
-                    }
+                    warning = profile.warning,
+                    onClick = { onProfileSelected(profile) }
                 )
+                Spacer(modifier = Modifier.height(6.dp))
+            }
 
-                Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // --- TTS Model Section ---
+            Text(
+                text = "Stimme / TTS Model",
+                fontSize = 20.sp,
+                color = NexusTextPrimary,
+                modifier = Modifier.padding(bottom = 4.dp)
+            )
+            Text(
+                text = "Neural-Stimme herunterladen für natürlichere Sprache",
+                fontSize = 13.sp,
+                color = NexusTextDim,
+                modifier = Modifier.padding(bottom = 12.dp)
+            )
+
+            // Android System TTS (always available)
+            VoiceCard(
+                name = "Android System TTS",
+                description = "Standard — immer verfügbar, kein Download nötig",
+                languages = "DE + EN",
+                isSelected = currentTtsModelId == null,
+                onClick = { /* already default */ }
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // Downloadable TTS models
+            TtsModelInfo.ALL_TTS_MODELS.forEach { model ->
+                val isDownloaded = model.id in downloadedTtsModels
+                val isSelected = model.id == currentTtsModelId
+                val isDownloading = ttsDownloadState is ModelManager.DownloadState.Downloading
+                        && ttsDownloadState.modelId == model.id
+
+                TtsModelCard(
+                    model = model,
+                    isSelected = isSelected,
+                    isDownloaded = isDownloaded,
+                    isDownloading = isDownloading,
+                    downloadProgress = if (isDownloading)
+                        (ttsDownloadState as ModelManager.DownloadState.Downloading).progress
+                    else 0f,
+                    onClick = { onTtsModelSelected(model) }
+                )
+                Spacer(modifier = Modifier.height(6.dp))
             }
         }
     }
@@ -91,9 +143,11 @@ fun VoiceSwitcherSheet(
 
 @Composable
 private fun VoiceCard(
-    profile: VoiceProfile,
+    name: String,
+    description: String,
+    languages: String,
     isSelected: Boolean,
-    isAvailable: Boolean,
+    warning: String? = null,
     onClick: () -> Unit
 ) {
     Surface(
@@ -101,10 +155,9 @@ private fun VoiceCard(
         color = if (isSelected) NexusSurfaceVariant else NexusCard,
         modifier = Modifier
             .fillMaxWidth()
-            .alpha(if (isAvailable) 1f else 0.5f)
-            .clickable(enabled = isAvailable) { onClick() }
+            .clickable { onClick() }
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
+        Column(modifier = Modifier.padding(12.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -121,62 +174,113 @@ private fun VoiceCard(
                         Spacer(modifier = Modifier.width(8.dp))
                     }
                     Text(
-                        text = profile.displayName,
-                        fontSize = 16.sp,
+                        text = name,
+                        fontSize = 15.sp,
+                        color = if (isSelected) NexusPrimary else NexusTextPrimary
+                    )
+                }
+                Text(text = languages, fontSize = 11.sp, color = NexusTextDim)
+            }
+            Text(
+                text = description,
+                fontSize = 12.sp,
+                color = NexusTextSecondary,
+                modifier = Modifier.padding(top = 3.dp)
+            )
+            if (warning != null) {
+                Row(
+                    modifier = Modifier.padding(top = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.Warning, null, tint = BatteryYellow, modifier = Modifier.size(13.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(text = warning, fontSize = 11.sp, color = BatteryYellow)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TtsModelCard(
+    model: TtsModelInfo,
+    isSelected: Boolean,
+    isDownloaded: Boolean,
+    isDownloading: Boolean,
+    downloadProgress: Float,
+    onClick: () -> Unit
+) {
+    val sizeMb = model.sizeBytes / 1_000_000
+
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = if (isSelected) NexusSurfaceVariant else NexusCard,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = !isDownloading) { onClick() }
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (isSelected) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(NexusPrimary)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+                    Text(
+                        text = model.displayName,
+                        fontSize = 15.sp,
                         color = if (isSelected) NexusPrimary else NexusTextPrimary
                     )
                 }
 
-                Text(
-                    text = profile.languages.joinToString(" + ") { it.uppercase() },
-                    fontSize = 12.sp,
-                    color = NexusTextDim
-                )
+                when {
+                    isDownloading -> {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(13.dp),
+                                strokeWidth = 2.dp,
+                                color = NexusPrimary
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("${(downloadProgress * 100).toInt()}%", fontSize = 11.sp, color = NexusTextSecondary)
+                        }
+                    }
+                    isDownloaded -> {
+                        Icon(Icons.Default.Check, "Downloaded", tint = BatteryGreen, modifier = Modifier.size(15.dp))
+                    }
+                    else -> {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.CloudDownload, null, tint = NexusTextDim, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("${sizeMb} MB", fontSize = 11.sp, color = NexusTextDim)
+                        }
+                    }
+                }
             }
 
             Text(
-                text = profile.description,
-                fontSize = 13.sp,
+                text = model.description,
+                fontSize = 12.sp,
                 color = NexusTextSecondary,
-                modifier = Modifier.padding(top = 4.dp)
+                modifier = Modifier.padding(top = 3.dp)
             )
 
-            if (!isAvailable) {
-                Row(
-                    modifier = Modifier.padding(top = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.Block,
-                        contentDescription = null,
-                        tint = NexusTextDim,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "Noch nicht verfügbar / Not yet available",
-                        fontSize = 12.sp,
-                        color = NexusTextDim
-                    )
-                }
-            } else if (profile.warning != null) {
-                Row(
-                    modifier = Modifier.padding(top = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.Warning,
-                        contentDescription = null,
-                        tint = BatteryYellow,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = profile.warning,
-                        fontSize = 12.sp,
-                        color = BatteryYellow
-                    )
-                }
+            if (isDownloading) {
+                LinearProgressIndicator(
+                    progress = { downloadProgress },
+                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp).height(3.dp),
+                    color = NexusPrimary,
+                    trackColor = NexusSurfaceVariant,
+                )
             }
         }
     }

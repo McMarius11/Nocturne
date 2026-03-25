@@ -300,11 +300,21 @@ fun ChatScreen(
 
     // Voice switcher bottom sheet
     if (showVoiceSwitcher) {
+        val currentTtsModel by viewModel.currentTtsModelId.collectAsState()
+        val downloadedTtsModels by viewModel.downloadedTtsModels.collectAsState()
+        val ttsDownloadState by viewModel.ttsDownloadState.collectAsState()
+
         VoiceSwitcherSheet(
             currentProfileId = voiceProfile.id,
+            currentTtsModelId = currentTtsModel,
+            downloadedTtsModels = downloadedTtsModels,
+            ttsDownloadState = ttsDownloadState,
             onProfileSelected = { profile ->
                 viewModel.setVoiceProfile(profile)
                 showVoiceSwitcher = false
+            },
+            onTtsModelSelected = { ttsModel ->
+                viewModel.selectTtsModel(ttsModel)
             },
             onDismiss = { showVoiceSwitcher = false }
         )

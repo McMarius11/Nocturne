@@ -15,6 +15,7 @@ import com.nexus.companion.memory.MemoryExtractor
 import com.nexus.companion.phone.PhoneCallService
 import com.nexus.companion.stt.SpeechRecognizerManager
 import com.nexus.companion.tts.NeuTtsEngine
+import com.nexus.companion.tts.TtsModelInfo
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -52,6 +53,16 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     val phoneIsGenerating: StateFlow<Boolean> = PhoneCallService.isGenerating
     val isSpeakerOn: StateFlow<Boolean> = PhoneCallService.isSpeakerOn
 
+    // TTS model state
+    private val _currentTtsModelId = MutableStateFlow<String?>(null)
+    val currentTtsModelId: StateFlow<String?> = _currentTtsModelId
+
+    private val _downloadedTtsModels = MutableStateFlow<Set<String>>(emptySet())
+    val downloadedTtsModels: StateFlow<Set<String>> = _downloadedTtsModels
+
+    // Reuse the download service state for TTS downloads
+    val ttsDownloadState: StateFlow<ModelManager.DownloadState> = llmEngine.downloadState
+
     private val _voiceProfile = MutableStateFlow(VoiceProfile.ANDROID_DE)
     val voiceProfile: StateFlow<VoiceProfile> = _voiceProfile
 
@@ -72,6 +83,7 @@ Keep your responses natural and not too long."""
         ttsEngine.initialize()
         sttManager.initialize()
         refreshDownloadedModels()
+        refreshDownloadedTtsModels()
 
         // Restore saved settings and load model
         viewModelScope.launch {
@@ -232,6 +244,75 @@ Keep your responses natural and not too long."""
 
     fun toggleSpeaker() {
         PhoneCallService.toggleSpeaker(getApplication())
+    }
+
+    fun selectTtsModel(model: TtsModelInfo) {
+        val modelsDir = java.io.File(getApplication<Application>().filesDir, "models")
+        val modelFile = java.io.File(modelsDir, model.fileName)
+
+        if (modelFile.exists()) {
+            // Already downloaded — activate it
+            _currentTtsModelId.value = model.id
+            viewModelScope.launch {
+                settingsStore.setSelectedModelId("tts_${model.id}") // prefix to distinguish
+            }
+        } else {
+            // Download it via the DownloadService
+            val modelInfo = ModelInfo(
+                id = model.id,
+                displayName = model.displayName,
+                fileName = model.fileName,
+                downloadUrl = model.downloadUrl,
+                sizeGb = model.sizeBytes / 1_000_000_000f,
+                sizeBytes = model.sizeBytes,
+                batteryPerHour = 0,
+                description = model.description
+            )
+            llmEngine.getModelManager().startDownload(modelInfo)
+        }
+    }
+
+    private fun refreshDownloadedTtsModels() {
+        val modelsDir = java.io.File(getApplication<Application>().filesDir, "models")
+        _downloadedTtsModels.value = TtsModelInfo.ALL_TTS_MODELS
+            .filter { java.io.File(modelsDir, it.fileName).exists() }
+            .map { it.id }
+            .toSet()
+    }
+
+    /**
+     * Called when app goes to background (onStop).
+     * Unloads LLM from RAM to free 2-8 GB memory.
+     * Does NOT unload if PhoneCallService is active.
+     */
+    fun onAppBackgrounded() {
+        if (isPhoneMode) {
+            Log.d(TAG, "Phone mode active — keeping model in RAM")
+            return
+        }
+        if (_isGenerating.value) {
+            Log.d(TAG, "Generation in progress — keeping model in RAM")
+            return
+        }
+        Log.i(TAG, "App backgrounded — unloading LLM to free RAM")
+        llmEngine.unload()
+    }
+
+    /**
+     * Called when app comes back to foreground (onStart).
+     * Reloads the previously selected model.
+     */
+    fun onAppForegrounded() {
+        val modelId = _currentModelId.value ?: return
+        if (llmEngine.isReady()) return // Already loaded
+
+        val model = ModelInfo.findById(modelId) ?: return
+        if (!llmEngine.getModelManager().isModelDownloaded(model)) return
+
+        Log.i(TAG, "App foregrounded — reloading model: $modelId")
+        viewModelScope.launch {
+            loadModelInternal(model)
+        }
     }
 
     override fun onCleared() {

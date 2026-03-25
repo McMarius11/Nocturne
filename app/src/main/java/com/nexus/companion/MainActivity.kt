@@ -56,4 +56,17 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onStop() {
+        super.onStop()
+        // Free LLM from RAM when app goes to background
+        // (unless phone mode is active — that runs in its own service)
+        viewModel.onAppBackgrounded()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // Reload model when user comes back
+        viewModel.onAppForegrounded()
+    }
 }
