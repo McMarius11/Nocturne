@@ -74,18 +74,20 @@ static void shift_context() {
 }
 
 static int decode_in_batches(const std::vector<llama_token> &tokens, llama_pos start_pos, bool logit_last = false) {
-    for (int i = 0; i < (int)tokens.size(); i += BATCH_SIZE) {
-        int cur_size = std::min((int)tokens.size() - i, BATCH_SIZE);
+    // Safety: truncate if prompt exceeds context
+    int n_tokens = (int)tokens.size();
+    int max_tokens = g_n_ctx - OVERFLOW_HEADROOM;
+    if (n_tokens > max_tokens) {
+        LOGI("Prompt truncated from %d to %d tokens (context limit)", n_tokens, max_tokens);
+        n_tokens = max_tokens;
+    }
+
+    for (int i = 0; i < n_tokens; i += BATCH_SIZE) {
+        int cur_size = std::min(n_tokens - i, BATCH_SIZE);
         common_batch_clear(g_batch);
 
-        // Check context overflow
-        if (start_pos + i + cur_size >= g_n_ctx - OVERFLOW_HEADROOM) {
-            LOGI("Context full, shifting...");
-            shift_context();
-        }
-
         for (int j = 0; j < cur_size; j++) {
-            bool want_logit = logit_last && (i + j == (int)tokens.size() - 1);
+            bool want_logit = logit_last && (i + j == n_tokens - 1);
             common_batch_add(g_batch, tokens[i + j], start_pos + i + j, {0}, want_logit);
         }
 
@@ -209,8 +211,15 @@ Java_com_nexus_companion_llm_LlamaJni_generate(
     std::string result;
     std::string cached_chars;
     const auto *vocab = llama_model_get_vocab(g_model);
+    const auto gen_start = ggml_time_us();
+    const int64_t GEN_TIMEOUT_US = 120 * 1000000LL; // 2 minute timeout
 
     for (int i = 0; i < maxTokens && !g_abort; i++) {
+        // Timeout safety
+        if (ggml_time_us() - gen_start > GEN_TIMEOUT_US) {
+            LOGI("Generation timeout after %d tokens", i);
+            break;
+        }
         // Check context overflow
         if (g_current_pos >= g_n_ctx - OVERFLOW_HEADROOM) {
             LOGI("Context full during generation, shifting...");

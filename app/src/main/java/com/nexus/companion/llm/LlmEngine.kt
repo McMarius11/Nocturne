@@ -61,10 +61,12 @@ class LlmEngine(private val context: Context) {
             }
 
             val path = modelManager.getModelPath(model).absolutePath
+            // Gemma 3 / Qwen3 support 8192 context, smaller models use 4096
+            val contextLength = if (model.sizeBytes > 2_000_000_000L) 8192 else 4096
             val success = jni.loadModel(
                 modelPath = path,
                 nThreads = 4,  // Tensor G4 optimized
-                contextLength = 4096
+                contextLength = contextLength
             )
             if (success) {
                 currentModel = model
