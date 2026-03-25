@@ -43,9 +43,13 @@ class DownloadService : Service() {
         const val EXTRA_MODEL_URL = "model_url"
         const val EXTRA_MODEL_SIZE = "model_size"
 
-        // Shared download state accessible from ModelManager
+        // LLM download state
         internal val _downloadProgress = MutableStateFlow<ModelManager.DownloadState>(ModelManager.DownloadState.Idle)
         val downloadProgress: StateFlow<ModelManager.DownloadState> = _downloadProgress
+
+        // TTS download state (separate so UI doesn't mix them up)
+        internal val _ttsDownloadProgress = MutableStateFlow<ModelManager.DownloadState>(ModelManager.DownloadState.Idle)
+        val ttsDownloadProgress: StateFlow<ModelManager.DownloadState> = _ttsDownloadProgress
 
         fun startDownload(context: Context, model: ModelInfo) {
             val intent = Intent(context, DownloadService::class.java).apply {
@@ -71,6 +75,8 @@ class DownloadService : Service() {
     private var downloadJob: Job? = null
     private var wakeLock: PowerManager.WakeLock? = null
 
+    private var isTtsDownload = false // tracks which state flow to update
+
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(5, TimeUnit.MINUTES)
@@ -79,6 +85,15 @@ class DownloadService : Service() {
 
     private val modelsDir: File
         get() = File(filesDir, "models").also { it.mkdirs() }
+
+    /** Update the correct download progress flow based on download type */
+    private fun setProgress(state: ModelManager.DownloadState) {
+        if (isTtsDownload) {
+            _ttsDownloadProgress.value = state
+        } else {
+            _downloadProgress.value = state
+        }
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -107,6 +122,7 @@ class DownloadService : Service() {
                     }
                 }
                 if (model != null) {
+                    isTtsDownload = ModelInfo.findById(model.id) == null
                     startForeground(NOTIFICATION_ID, buildNotification("Vorbereitung...", 0))
                     startModelDownload(model)
                 } else {
@@ -129,7 +145,7 @@ class DownloadService : Service() {
                 val success = performDownload(model)
                 if (success) {
                     updateNotification("${model.displayName} heruntergeladen", 100)
-                    _downloadProgress.value = ModelManager.DownloadState.Idle
+                    setProgress(ModelManager.DownloadState.Idle)
                 }
             } finally {
                 releaseWakeLock()
@@ -155,7 +171,7 @@ class DownloadService : Service() {
         for (attempt in 1..3) {
             var shouldRetry = false
             try {
-                _downloadProgress.value = ModelManager.DownloadState.Downloading(model.id, 0f)
+                setProgress(ModelManager.DownloadState.Downloading(model.id, 0f))
                 updateNotification("${model.displayName} wird heruntergeladen...", 0)
 
                 val request = Request.Builder()
@@ -174,7 +190,7 @@ class DownloadService : Service() {
                         delay(attempt * 2000L)
                         shouldRetry = true
                     } else {
-                        _downloadProgress.value = ModelManager.DownloadState.Error("Download fehlgeschlagen: $lastError")
+                        setProgress(ModelManager.DownloadState.Error("Download fehlgeschlagen: $lastError"))
                         updateNotification("Download fehlgeschlagen", 0)
                         return false
                     }
@@ -189,7 +205,7 @@ class DownloadService : Service() {
                             delay(attempt * 2000L)
                             shouldRetry = true
                         } else {
-                            _downloadProgress.value = ModelManager.DownloadState.Error(lastError!!)
+                            setProgress(ModelManager.DownloadState.Error(lastError!!))
                             updateNotification("Download fehlgeschlagen", 0)
                             return false
                         }
@@ -209,9 +225,9 @@ class DownloadService : Service() {
                                     downloadedBytes += bytesRead
                                     if (totalBytes > 0) {
                                         val progress = downloadedBytes.toFloat() / totalBytes
-                                        _downloadProgress.value = ModelManager.DownloadState.Downloading(
+                                        setProgress(ModelManager.DownloadState.Downloading(
                                             model.id, progress
-                                        )
+                                        ))
                                         // Throttle notification updates to every 500ms
                                         val now = System.currentTimeMillis()
                                         if (now - lastNotificationUpdate > 500) {
@@ -237,7 +253,7 @@ class DownloadService : Service() {
                                 delay(attempt * 2000L)
                                 shouldRetry = true
                             } else {
-                                _downloadProgress.value = ModelManager.DownloadState.Error(lastError!!)
+                                setProgress(ModelManager.DownloadState.Error(lastError!!))
                                 updateNotification("Download unvollständig", 0)
                                 return false
                             }
@@ -249,7 +265,7 @@ class DownloadService : Service() {
                             val renamed = tempFile.renameTo(targetFile)
                             if (!renamed) {
                                 tempFile.delete()
-                                _downloadProgress.value = ModelManager.DownloadState.Error("Datei konnte nicht gespeichert werden")
+                                setProgress(ModelManager.DownloadState.Error("Datei konnte nicht gespeichert werden"))
                                 return false
                             }
                             return true
@@ -266,14 +282,14 @@ class DownloadService : Service() {
             }
         }
 
-        _downloadProgress.value = ModelManager.DownloadState.Error("Download fehlgeschlagen nach 3 Versuchen: $lastError")
+        setProgress(ModelManager.DownloadState.Error("Download fehlgeschlagen nach 3 Versuchen: $lastError"))
         updateNotification("Download fehlgeschlagen", 0)
         return false
     }
 
     private fun cancelCurrentDownload() {
         downloadJob?.cancel()
-        _downloadProgress.value = ModelManager.DownloadState.Idle
+        setProgress(ModelManager.DownloadState.Idle)
         releaseWakeLock()
         stopSelf()
     }

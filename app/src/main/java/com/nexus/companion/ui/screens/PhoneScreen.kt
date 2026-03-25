@@ -55,6 +55,8 @@ fun PhoneScreen(
     val isGenerating by viewModel.phoneIsGenerating.collectAsState()
     val sttState by viewModel.sttState.collectAsState()
     val isListening = sttState is SpeechRecognizerManager.SttState.Listening
+    val isProcessing = sttState is SpeechRecognizerManager.SttState.Processing
+            || sttState is SpeechRecognizerManager.SttState.Done
     val sttText by viewModel.sttPartialText.collectAsState()
     val isSpeakerOn by viewModel.isSpeakerOn.collectAsState()
 
@@ -121,6 +123,7 @@ fun PhoneScreen(
         Text(
             text = when {
                 isGenerating -> "Nexus denkt nach..."
+                isProcessing -> sttText.ifBlank { "Verarbeite..." }
                 isListening -> "Hört zu..."
                 sttText.isNotBlank() -> sttText
                 else -> "Tippe auf das Mikrofon"

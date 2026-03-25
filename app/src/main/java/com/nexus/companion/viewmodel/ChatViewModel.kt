@@ -8,6 +8,7 @@ import com.nexus.companion.VoiceProfile
 import com.nexus.companion.data.ChatDatabase
 import com.nexus.companion.data.ChatRepository
 import com.nexus.companion.data.SettingsStore
+import com.nexus.companion.llm.DownloadService
 import com.nexus.companion.llm.LlmEngine
 import com.nexus.companion.llm.ModelInfo
 import com.nexus.companion.llm.ModelManager
@@ -36,6 +37,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _isGenerating = MutableStateFlow(false)
     val isGenerating: StateFlow<Boolean> = _isGenerating
+
+    // Separate loading state (model loading) so Send button isn't blocked
+    private val _isLoadingModel = MutableStateFlow(false)
+    val isLoadingModel: StateFlow<Boolean> = _isLoadingModel
 
     private val _currentModelId = MutableStateFlow<String?>(null)
     val currentModelId: StateFlow<String?> = _currentModelId
@@ -66,8 +71,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val _downloadedTtsModels = MutableStateFlow<Set<String>>(emptySet())
     val downloadedTtsModels: StateFlow<Set<String>> = _downloadedTtsModels
 
-    // TTS downloads share the same DownloadService but state is separate
-    val ttsDownloadState: StateFlow<ModelManager.DownloadState> = llmEngine.downloadState
+    val ttsDownloadState: StateFlow<ModelManager.DownloadState> = DownloadService.ttsDownloadProgress
 
     private val _voiceProfile = MutableStateFlow(VoiceProfile.ANDROID_DE)
     val voiceProfile: StateFlow<VoiceProfile> = _voiceProfile
@@ -270,7 +274,7 @@ Keep your responses natural and not too long."""
     }
 
     private suspend fun loadModelInternal(model: ModelInfo) {
-        _isGenerating.value = true
+        _isLoadingModel.value = true
         _errorMessage.value = null
         try {
             val success = llmEngine.loadModel(model)
@@ -287,7 +291,7 @@ Keep your responses natural and not too long."""
             Log.e(TAG, "Error loading model", e)
             _errorMessage.value = "Fehler beim Laden: ${e.message}"
         } finally {
-            _isGenerating.value = false
+            _isLoadingModel.value = false
         }
     }
 

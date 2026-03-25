@@ -1,5 +1,10 @@
 package com.nexus.companion.ui.screens
 
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -87,11 +92,13 @@ fun ChatScreen(
     val voiceProfile by viewModel.voiceProfile.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val isModelLoaded by viewModel.isModelLoaded.collectAsState()
+    val isLoadingModel by viewModel.isLoadingModel.collectAsState()
 
     var inputText by remember { mutableStateOf("") }
     var showModelSwitcher by remember { mutableStateOf(false) }
     var showVoiceSwitcher by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
 
@@ -119,11 +126,16 @@ fun ChatScreen(
                     Text(
                         text = when {
                             currentModel == null -> "Kein Modell"
+                            isLoadingModel -> "${currentModel} wird geladen..."
                             isModelLoaded -> currentModel!!
                             else -> "${currentModel} (aus)"
                         },
                         fontSize = 12.sp,
-                        color = if (isModelLoaded) NexusTextDim else NexusSecondary
+                        color = when {
+                            isLoadingModel -> NexusPrimary
+                            isModelLoaded -> NexusTextDim
+                            else -> NexusSecondary
+                        }
                     )
                 }
             },
@@ -166,7 +178,7 @@ fun ChatScreen(
                         DropdownMenuItem(
                             text = { Text("Chat löschen") },
                             onClick = {
-                                viewModel.clearChat()
+                                showDeleteConfirm = true
                                 showMenu = false
                             },
                             leadingIcon = {
@@ -342,20 +354,54 @@ fun ChatScreen(
             onDismiss = { showVoiceSwitcher = false }
         )
     }
+
+    // Delete confirmation dialog
+    if (showDeleteConfirm) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("Chat löschen?", color = NexusTextPrimary) },
+            text = { Text("Der gesamte Chatverlauf wird unwiderruflich gelöscht.", color = NexusTextSecondary) },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.clearChat()
+                    showDeleteConfirm = false
+                }) {
+                    Text("Löschen", color = NexusSecondary)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text("Abbrechen", color = NexusPrimary)
+                }
+            },
+            containerColor = NexusCard
+        )
+    }
 }
 
 @Composable
 private fun TypingIndicator() {
+    val infiniteTransition = rememberInfiniteTransition(label = "typing")
+
     Row(
         modifier = Modifier.padding(start = 16.dp, top = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        repeat(3) {
+        repeat(3) { index ->
+            val alpha by infiniteTransition.animateFloat(
+                initialValue = 0.3f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(600, delayMillis = index * 200),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "dot_$index"
+            )
             Box(
                 modifier = Modifier
                     .size(8.dp)
                     .clip(CircleShape)
-                    .background(NexusPrimary.copy(alpha = 0.6f))
+                    .background(NexusPrimary.copy(alpha = alpha))
             )
         }
     }
