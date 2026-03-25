@@ -192,9 +192,10 @@ Java_com_nexus_companion_llm_LlamaJni_generate(
     reset_state(true);
 
     // The prompt is already formatted by the Kotlin layer (LlmEngine.buildPrompt).
-    // add_special=true adds BOS token.
+    // IMPORTANT: add_special=false because Gemma 3 GGUF has add_bos_token=true in metadata,
+    // so llama.cpp auto-adds BOS. Setting add_special=true would duplicate it → broken output.
     // parse_special=true interprets <start_of_turn> etc. as special tokens (required for Gemma 3).
-    auto tokens = common_tokenize(g_context, promptCpp, true, true);
+    auto tokens = common_tokenize(g_context, promptCpp, false, true);
     LOGI("Prompt tokenized: %d tokens (prompt length: %d chars)", (int)tokens.size(), (int)promptCpp.size());
 
     if (tokens.empty()) {
