@@ -63,13 +63,19 @@ class LlmEngine(private val context: Context) {
             val path = modelManager.getModelPath(model).absolutePath
             // Gemma 3 / Qwen3 support 8192 context, smaller models use 4096
             val contextLength = if (model.sizeBytes > 2_000_000_000L) 8192 else 4096
+            DebugLog.llm("Loading ${model.displayName} (${model.sizeGb} GB, ctx=$contextLength)")
+            val loadStart = System.currentTimeMillis()
             val success = jni.loadModel(
                 modelPath = path,
                 nThreads = 4,  // Tensor G4 optimized
                 contextLength = contextLength
             )
+            val loadMs = System.currentTimeMillis() - loadStart
             if (success) {
                 currentModel = model
+                DebugLog.llm("Model loaded in ${loadMs}ms")
+            } else {
+                DebugLog.llm("Model load FAILED after ${loadMs}ms")
             }
             success
         } catch (e: UnsatisfiedLinkError) {
@@ -93,7 +99,12 @@ class LlmEngine(private val context: Context) {
         try {
             val format = currentModel?.promptFormat ?: PromptFormat.ALPACA
             val prompt = buildPrompt(format, systemPrompt, chatHistory, userMessage, memoryContext)
-            jni.generate(prompt, maxTokens)
+            DebugLog.llm("Generate: ${prompt.length} chars, format=$format, maxTokens=$maxTokens")
+            val genStart = System.currentTimeMillis()
+            val result = jni.generate(prompt, maxTokens)
+            val genMs = System.currentTimeMillis() - genStart
+            DebugLog.llm("Response: ${result.length} chars in ${genMs}ms")
+            result
         } catch (e: Exception) {
             Log.e(TAG, "Error during generation", e)
             throw e
@@ -199,8 +210,21 @@ class LlmEngine(private val context: Context) {
         jni.abort()
     }
 
+    /**
+     * Unload model from RAM. Aborts any in-flight generation first,
+     * then unloads on IO thread to prevent ANR on main thread.
+     */
     fun unload() {
-        jni.unloadModel()
+        DebugLog.llm("Unloading model (abort + free)")
+        jni.abort() // Signal generation to stop (non-blocking)
         currentModel = null
+        // Unload on IO thread — JNI mutex would block main thread
+        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                jni.unloadModel()
+            } catch (e: Exception) {
+                Log.w(TAG, "Error during unload", e)
+            }
+        }
     }
 }

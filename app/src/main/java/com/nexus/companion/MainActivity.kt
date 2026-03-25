@@ -14,6 +14,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import com.nexus.companion.ui.screens.ChatScreen
+import com.nexus.companion.ui.screens.DebugLogScreen
 import com.nexus.companion.ui.screens.PhoneScreen
 import com.nexus.companion.ui.theme.NexusTheme
 import com.nexus.companion.viewmodel.ChatViewModel
@@ -53,11 +54,15 @@ class MainActivity : ComponentActivity() {
                 when (currentScreen) {
                     "chat" -> ChatScreen(
                         viewModel = viewModel,
-                        onNavigateToPhone = { currentScreen = "phone" }
+                        onNavigateToPhone = { currentScreen = "phone" },
+                        onNavigateToDebugLog = { currentScreen = "debug" }
                     )
                     "phone" -> PhoneScreen(
                         viewModel = viewModel,
                         onHangUp = { currentScreen = "chat" }
+                    )
+                    "debug" -> DebugLogScreen(
+                        onBack = { currentScreen = "chat" }
                     )
                 }
             }
