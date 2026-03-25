@@ -191,11 +191,11 @@ Java_com_nexus_companion_llm_LlamaJni_generate(
     // Reset state for fresh generation
     reset_state(true);
 
-    // The prompt is already formatted by the Kotlin layer (LlmEngine.buildPrompt),
-    // so we always tokenize as raw text — do NOT apply chat templates again.
-    // add_special=true adds BOS token, parse_special=true handles special tokens in text.
+    // The prompt is already formatted by the Kotlin layer (LlmEngine.buildPrompt).
+    // add_special=true adds BOS token.
+    // parse_special=true interprets <start_of_turn> etc. as special tokens (required for Gemma 3).
     auto tokens = common_tokenize(g_context, promptCpp, true, true);
-    LOGI("Prompt tokenized: %d tokens", (int)tokens.size());
+    LOGI("Prompt tokenized: %d tokens (prompt length: %d chars)", (int)tokens.size(), (int)promptCpp.size());
 
     if (tokens.empty()) {
         return env->NewStringUTF("[Error: Empty prompt after tokenization]");
@@ -212,12 +212,14 @@ Java_com_nexus_companion_llm_LlamaJni_generate(
     std::string cached_chars;
     const auto *vocab = llama_model_get_vocab(g_model);
     const auto gen_start = ggml_time_us();
-    const int64_t GEN_TIMEOUT_US = 120 * 1000000LL; // 2 minute timeout
+    const int64_t GEN_TIMEOUT_US = 30 * 1000000LL; // 30 second timeout
+    bool first_token_logged = false;
 
     for (int i = 0; i < maxTokens && !g_abort; i++) {
         // Timeout safety
         if (ggml_time_us() - gen_start > GEN_TIMEOUT_US) {
-            LOGI("Generation timeout after %d tokens", i);
+            LOGI("Generation timeout after %d tokens (%.1f seconds)",
+                 i, (double)(ggml_time_us() - gen_start) / 1000000.0);
             break;
         }
         // Check context overflow
@@ -229,6 +231,12 @@ Java_com_nexus_companion_llm_LlamaJni_generate(
         // Sample
         auto new_token = common_sampler_sample(g_sampler, g_context, -1);
         common_sampler_accept(g_sampler, new_token, true);
+
+        if (!first_token_logged) {
+            LOGI("First token sampled: id=%d (%.1f ms after start)",
+                 new_token, (double)(ggml_time_us() - gen_start) / 1000.0);
+            first_token_logged = true;
+        }
 
         // Check EOG
         if (llama_vocab_is_eog(vocab, new_token)) {
