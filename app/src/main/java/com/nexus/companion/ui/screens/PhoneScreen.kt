@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -16,11 +17,14 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.material.icons.filled.VolumeOff
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -52,6 +56,7 @@ fun PhoneScreen(
     val sttState by viewModel.sttState.collectAsState()
     val isListening = sttState is SpeechRecognizerManager.SttState.Listening
     val sttText by viewModel.sttPartialText.collectAsState()
+    val isSpeakerOn by viewModel.isSpeakerOn.collectAsState()
 
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val pulseScale by infiniteTransition.animateFloat(
@@ -115,10 +120,10 @@ fun PhoneScreen(
 
         Text(
             text = when {
-                isGenerating -> "Nexus is thinking..."
-                isListening -> "Listening..."
+                isGenerating -> "Nexus denkt nach..."
+                isListening -> "Hört zu..."
                 sttText.isNotBlank() -> sttText
-                else -> "Tap the microphone"
+                else -> "Tippe auf das Mikrofon"
             },
             fontSize = 16.sp,
             color = if (isListening) NexusPrimary else NexusTextDim,
@@ -127,20 +132,49 @@ fun PhoneScreen(
 
         Spacer(modifier = Modifier.height(64.dp))
 
-        // Mic button
-        IconButton(
-            onClick = { viewModel.toggleListening() },
-            modifier = Modifier
-                .size(72.dp)
-                .clip(CircleShape)
-                .background(if (isListening) NexusPrimary else NexusSurfaceVariant)
+        // Control buttons row: Speaker + Mic
+        Row(
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                if (isListening) Icons.Default.MicOff else Icons.Default.Mic,
-                contentDescription = "Microphone",
-                tint = if (isListening) NexusBlack else NexusTextPrimary,
-                modifier = Modifier.size(32.dp)
-            )
+            // Speaker toggle
+            IconButton(
+                onClick = { viewModel.toggleSpeaker() },
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(CircleShape)
+                    .background(if (isSpeakerOn) NexusPrimary.copy(alpha = 0.3f) else NexusSurfaceVariant)
+            ) {
+                Icon(
+                    if (isSpeakerOn) Icons.Default.VolumeUp else Icons.Default.VolumeOff,
+                    contentDescription = "Lautsprecher",
+                    tint = if (isSpeakerOn) NexusPrimary else NexusTextDim,
+                    modifier = Modifier.size(26.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(24.dp))
+
+            // Mic button (main, bigger)
+            IconButton(
+                onClick = { viewModel.toggleListening() },
+                modifier = Modifier
+                    .size(72.dp)
+                    .clip(CircleShape)
+                    .background(if (isListening) NexusPrimary else NexusSurfaceVariant)
+            ) {
+                Icon(
+                    if (isListening) Icons.Default.MicOff else Icons.Default.Mic,
+                    contentDescription = "Mikrofon",
+                    tint = if (isListening) NexusBlack else NexusTextPrimary,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(24.dp))
+
+            // Spacer to balance the row (same size as speaker button)
+            Box(modifier = Modifier.size(56.dp))
         }
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -155,7 +189,7 @@ fun PhoneScreen(
         ) {
             Icon(
                 Icons.Default.CallEnd,
-                contentDescription = "Hang up",
+                contentDescription = "Auflegen",
                 tint = NexusBlack,
                 modifier = Modifier.size(28.dp)
             )

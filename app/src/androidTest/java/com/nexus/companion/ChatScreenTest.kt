@@ -51,7 +51,7 @@ class ChatScreenTest {
     @Test
     fun modelInfoAllModelsAccessible() {
         val models = com.nexus.companion.llm.ModelInfo.ALL_MODELS
-        assert(models.size == 3) { "Expected 3 models, got ${models.size}" }
+        assert(models.size == 5) { "Expected 5 models, got ${models.size}" }
     }
 
     @Test

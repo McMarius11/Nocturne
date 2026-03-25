@@ -18,6 +18,8 @@ data class ModelInfo(
     val promptFormat: PromptFormat = PromptFormat.ALPACA
 ) {
     companion object {
+        // --- Roleplay / Companion models ---
+
         val NOROMAID_7B = ModelInfo(
             id = "noromaid-7b",
             displayName = "Noromaid 7B",
@@ -26,7 +28,7 @@ data class ModelInfo(
             sizeGb = 5.1f,
             sizeBytes = 5_500_000_000L,
             batteryPerHour = 13,
-            description = "Standard — warm und romantisch",
+            description = "Roleplay — warm und romantisch",
             promptFormat = PromptFormat.ALPACA
         )
 
@@ -42,6 +44,34 @@ data class ModelInfo(
             promptFormat = PromptFormat.ALPACA
         )
 
+        // --- Uncensored / Abliterated models ---
+
+        val GEMMA3_4B_HERETIC = ModelInfo(
+            id = "gemma3-4b-heretic",
+            displayName = "Gemma 3 4B Heretic",
+            fileName = "mlabonne_gemma-3-4b-it-abliterated-Q4_K_M.gguf",
+            downloadUrl = "https://huggingface.co/bartowski/mlabonne_gemma-3-4b-it-abliterated-GGUF/resolve/main/mlabonne_gemma-3-4b-it-abliterated-Q4_K_M.gguf",
+            sizeGb = 2.5f,
+            sizeBytes = 2_700_000_000L,
+            batteryPerHour = 8,
+            description = "Abliterated Gemma 3 — unzensiert, multilingual",
+            promptFormat = PromptFormat.GEMMA
+        )
+
+        val QWEN3_4B_ABLITERATED = ModelInfo(
+            id = "qwen3-4b-abliterated",
+            displayName = "Qwen3 4B Abliterated",
+            fileName = "mlabonne_Qwen3-4B-abliterated-Q4_K_M.gguf",
+            downloadUrl = "https://huggingface.co/bartowski/mlabonne_Qwen3-4B-abliterated-GGUF/resolve/main/mlabonne_Qwen3-4B-abliterated-Q4_K_M.gguf",
+            sizeGb = 2.7f,
+            sizeBytes = 2_900_000_000L,
+            batteryPerHour = 8,
+            description = "Abliterated Qwen3 — Thinking-Modus, unzensiert",
+            promptFormat = PromptFormat.CHATML
+        )
+
+        // --- Lightweight models ---
+
         val GEMMA_2B = ModelInfo(
             id = "gemma-2b",
             displayName = "Gemma 2B",
@@ -54,7 +84,13 @@ data class ModelInfo(
             promptFormat = PromptFormat.GEMMA
         )
 
-        val ALL_MODELS = listOf(NOROMAID_7B, MYTHOMAX_13B, GEMMA_2B)
+        val ALL_MODELS = listOf(
+            GEMMA3_4B_HERETIC,
+            QWEN3_4B_ABLITERATED,
+            NOROMAID_7B,
+            MYTHOMAX_13B,
+            GEMMA_2B
+        )
 
         fun findById(id: String): ModelInfo? = ALL_MODELS.find { it.id == id }
     }

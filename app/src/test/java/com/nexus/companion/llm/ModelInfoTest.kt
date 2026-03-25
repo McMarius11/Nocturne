@@ -9,8 +9,8 @@ import org.junit.Test
 class ModelInfoTest {
 
     @Test
-    fun allModelsContainsThreeModels() {
-        assertEquals(3, ModelInfo.ALL_MODELS.size)
+    fun allModelsContainsFiveModels() {
+        assertEquals(5, ModelInfo.ALL_MODELS.size)
     }
 
     @Test
@@ -72,6 +72,22 @@ class ModelInfoTest {
         val mythomax = ModelInfo.findById("mythomax-13b")
         assertNotNull(mythomax)
         assertEquals(PromptFormat.ALPACA, mythomax!!.promptFormat)
+    }
+
+    @Test
+    fun gemma3HereticModelExists() {
+        val model = ModelInfo.findById("gemma3-4b-heretic")
+        assertNotNull(model)
+        assertEquals(PromptFormat.GEMMA, model!!.promptFormat)
+        assertTrue(model.sizeGb < 3.0f)
+    }
+
+    @Test
+    fun qwen3AbliteratedModelExists() {
+        val model = ModelInfo.findById("qwen3-4b-abliterated")
+        assertNotNull(model)
+        assertEquals(PromptFormat.CHATML, model!!.promptFormat)
+        assertTrue(model.sizeGb < 3.0f)
     }
 
     @Test

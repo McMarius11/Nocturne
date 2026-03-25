@@ -48,6 +48,7 @@ class PhoneCallService : Service(), SensorEventListener {
         const val ACTION_START = "com.nexus.companion.PHONE_START"
         const val ACTION_STOP = "com.nexus.companion.PHONE_STOP"
         const val ACTION_TOGGLE_MIC = "com.nexus.companion.PHONE_TOGGLE_MIC"
+        const val ACTION_TOGGLE_SPEAKER = "com.nexus.companion.PHONE_TOGGLE_SPEAKER"
 
         private val _callState = MutableStateFlow<CallState>(CallState.Idle)
         val callState: StateFlow<CallState> = _callState
@@ -62,6 +63,9 @@ class PhoneCallService : Service(), SensorEventListener {
 
         private val _isGenerating = MutableStateFlow(false)
         val isGenerating: StateFlow<Boolean> = _isGenerating
+
+        private val _isSpeakerOn = MutableStateFlow(true) // Speaker on by default
+        val isSpeakerOn: StateFlow<Boolean> = _isSpeakerOn
 
         fun start(context: Context) {
             val intent = Intent(context, PhoneCallService::class.java).apply {
@@ -80,6 +84,13 @@ class PhoneCallService : Service(), SensorEventListener {
         fun toggleMic(context: Context) {
             val intent = Intent(context, PhoneCallService::class.java).apply {
                 action = ACTION_TOGGLE_MIC
+            }
+            context.startService(intent)
+        }
+
+        fun toggleSpeaker(context: Context) {
+            val intent = Intent(context, PhoneCallService::class.java).apply {
+                action = ACTION_TOGGLE_SPEAKER
             }
             context.startService(intent)
         }
@@ -133,6 +144,7 @@ Keep your responses natural and not too long."""
             ACTION_START -> startCall()
             ACTION_STOP -> stopCall()
             ACTION_TOGGLE_MIC -> toggleMicrophone()
+            ACTION_TOGGLE_SPEAKER -> toggleSpeaker()
         }
         return START_NOT_STICKY
     }
@@ -181,6 +193,17 @@ Keep your responses natural and not too long."""
             sttManager.stopListening()
         } else {
             sttManager.startListening()
+        }
+    }
+
+    private fun toggleSpeaker() {
+        val newState = !_isSpeakerOn.value
+        _isSpeakerOn.value = newState
+        audioManager?.isSpeakerphoneOn = newState
+        if (newState) {
+            audioManager?.mode = AudioManager.MODE_NORMAL
+        } else {
+            audioManager?.mode = AudioManager.MODE_IN_COMMUNICATION
         }
     }
 
@@ -324,11 +347,14 @@ Keep your responses natural and not too long."""
         val distance = event.values[0]
         val isNear = distance < (event.sensor.maximumRange / 2)
 
-        // Route audio to earpiece when phone is near ear, speaker when away
+        // Auto-switch audio routing based on proximity
+        // Only auto-switch if user hasn't manually set speaker off
         if (isNear) {
+            _isSpeakerOn.value = false
             audioManager?.mode = AudioManager.MODE_IN_COMMUNICATION
             audioManager?.isSpeakerphoneOn = false
         } else {
+            _isSpeakerOn.value = true
             audioManager?.mode = AudioManager.MODE_NORMAL
             audioManager?.isSpeakerphoneOn = true
         }

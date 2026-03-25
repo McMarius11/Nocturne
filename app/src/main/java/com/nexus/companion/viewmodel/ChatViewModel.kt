@@ -50,6 +50,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     val sttState: StateFlow<SpeechRecognizerManager.SttState> = PhoneCallService.sttState
     val sttPartialText: StateFlow<String> = PhoneCallService.sttPartialText
     val phoneIsGenerating: StateFlow<Boolean> = PhoneCallService.isGenerating
+    val isSpeakerOn: StateFlow<Boolean> = PhoneCallService.isSpeakerOn
 
     private val _voiceProfile = MutableStateFlow(VoiceProfile.ANDROID_DE)
     val voiceProfile: StateFlow<VoiceProfile> = _voiceProfile
@@ -199,6 +200,10 @@ Keep your responses natural and not too long."""
 
     fun toggleListening() {
         PhoneCallService.toggleMic(getApplication())
+    }
+
+    fun toggleSpeaker() {
+        PhoneCallService.toggleSpeaker(getApplication())
     }
 
     override fun onCleared() {
