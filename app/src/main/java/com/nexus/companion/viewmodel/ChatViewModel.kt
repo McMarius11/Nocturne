@@ -12,6 +12,7 @@ import com.nexus.companion.llm.LlmEngine
 import com.nexus.companion.llm.ModelInfo
 import com.nexus.companion.llm.ModelManager
 import com.nexus.companion.memory.MemoryExtractor
+import com.nexus.companion.phone.PhoneCallService
 import com.nexus.companion.stt.SpeechRecognizerManager
 import com.nexus.companion.tts.NeuTtsEngine
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -44,13 +45,11 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     val downloadState = llmEngine.downloadState
 
-    private val _sttState = MutableStateFlow<SpeechRecognizerManager.SttState>(
-        SpeechRecognizerManager.SttState.Idle
-    )
-    val sttState: StateFlow<SpeechRecognizerManager.SttState> = _sttState
-
-    private val _sttPartialText = MutableStateFlow("")
-    val sttPartialText: StateFlow<String> = _sttPartialText
+    // Phone mode state comes from PhoneCallService (survives screen-off)
+    val phoneCallState: StateFlow<PhoneCallService.CallState> = PhoneCallService.callState
+    val sttState: StateFlow<SpeechRecognizerManager.SttState> = PhoneCallService.sttState
+    val sttPartialText: StateFlow<String> = PhoneCallService.sttPartialText
+    val phoneIsGenerating: StateFlow<Boolean> = PhoneCallService.isGenerating
 
     private val _voiceProfile = MutableStateFlow(VoiceProfile.ANDROID_DE)
     val voiceProfile: StateFlow<VoiceProfile> = _voiceProfile
@@ -72,30 +71,6 @@ Keep your responses natural and not too long."""
         ttsEngine.initialize()
         sttManager.initialize()
         refreshDownloadedModels()
-
-        // Collect STT state
-        viewModelScope.launch {
-            sttManager.state.collect { state ->
-                _sttState.value = state
-                if (state is SpeechRecognizerManager.SttState.Done && state.text.isNotBlank()) {
-                    if (isPhoneMode) {
-                        sendMessage(state.text)
-                    }
-                }
-                // Auto-recover from STT errors
-                if (state is SpeechRecognizerManager.SttState.Error) {
-                    Log.w(TAG, "STT error: ${state.message}")
-                    // Reset to idle after error so user can retry
-                    kotlinx.coroutines.delay(1500)
-                    _sttState.value = SpeechRecognizerManager.SttState.Idle
-                }
-            }
-        }
-        viewModelScope.launch {
-            sttManager.result.collect { text ->
-                _sttPartialText.value = text
-            }
-        }
 
         // Restore saved settings and load model
         viewModelScope.launch {
@@ -155,10 +130,6 @@ Keep your responses natural and not too long."""
                 val cleanResponse = response.trim()
                 if (cleanResponse.isNotBlank() && cleanResponse != "[Model not loaded]") {
                     chatRepo.sendMessage("assistant", cleanResponse)
-
-                    if (isPhoneMode) {
-                        ttsEngine.speak(cleanResponse)
-                    }
                 } else if (cleanResponse == "[Model not loaded]") {
                     _errorMessage.value = "Kein Modell geladen. Bitte wähle ein Modell aus."
                 }
@@ -168,10 +139,6 @@ Keep your responses natural and not too long."""
                 chatRepo.sendMessage("assistant", "Entschuldigung, da ist etwas schiefgelaufen. Bitte versuche es nochmal.")
             } finally {
                 _isGenerating.value = false
-
-                if (isPhoneMode) {
-                    sttManager.startListening()
-                }
             }
         }
     }
@@ -222,21 +189,16 @@ Keep your responses natural and not too long."""
 
     fun startPhoneMode() {
         isPhoneMode = true
+        PhoneCallService.start(getApplication())
     }
 
     fun stopPhoneMode() {
         isPhoneMode = false
-        sttManager.stopListening()
-        ttsEngine.stop()
+        PhoneCallService.stop(getApplication())
     }
 
     fun toggleListening() {
-        val currentState = _sttState.value
-        if (currentState is SpeechRecognizerManager.SttState.Listening) {
-            sttManager.stopListening()
-        } else {
-            sttManager.startListening()
-        }
+        PhoneCallService.toggleMic(getApplication())
     }
 
     override fun onCleared() {

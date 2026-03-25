@@ -48,7 +48,7 @@ fun PhoneScreen(
     viewModel: ChatViewModel,
     onHangUp: () -> Unit
 ) {
-    val isGenerating by viewModel.isGenerating.collectAsState()
+    val isGenerating by viewModel.phoneIsGenerating.collectAsState()
     val sttState by viewModel.sttState.collectAsState()
     val isListening = sttState is SpeechRecognizerManager.SttState.Listening
     val sttText by viewModel.sttPartialText.collectAsState()
