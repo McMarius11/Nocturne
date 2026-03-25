@@ -16,6 +16,7 @@ class SettingsStore(private val context: Context) {
     companion object {
         private val KEY_SELECTED_MODEL = stringPreferencesKey("selected_model_id")
         private val KEY_VOICE_PROFILE = stringPreferencesKey("voice_profile_id")
+        private val KEY_TTS_MODEL = stringPreferencesKey("tts_model_id")
     }
 
     suspend fun getSelectedModelId(): String? {
@@ -39,6 +40,22 @@ class SettingsStore(private val context: Context) {
     suspend fun setVoiceProfileId(profileId: String) {
         context.dataStore.edit { prefs ->
             prefs[KEY_VOICE_PROFILE] = profileId
+        }
+    }
+
+    suspend fun getTtsModelId(): String? {
+        return context.dataStore.data.map { prefs ->
+            prefs[KEY_TTS_MODEL]
+        }.first()
+    }
+
+    suspend fun setTtsModelId(modelId: String?) {
+        context.dataStore.edit { prefs ->
+            if (modelId != null) {
+                prefs[KEY_TTS_MODEL] = modelId
+            } else {
+                prefs.remove(KEY_TTS_MODEL)
+            }
         }
     }
 }

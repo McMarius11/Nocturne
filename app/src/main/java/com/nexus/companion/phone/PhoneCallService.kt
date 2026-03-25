@@ -297,13 +297,14 @@ Keep your responses natural and not too long."""
             updateNotification("Nexus denkt nach...")
 
             try {
-                // Save user message
-                chatRepo.sendMessage("user", text)
                 memoryExtractor.extractAndStore(text)
 
-                // Generate response with relevance-based memory
+                // Get history BEFORE saving current message (to avoid duplication in prompt)
                 val history = chatRepo.getRecentHistory(10)
                 val memoryContext = memoryExtractor.getMemoryContext(text)
+
+                // Save user message AFTER fetching history
+                chatRepo.sendMessage("user", text)
 
                 val response = llmEngine.generate(
                     systemPrompt = systemPrompt,

@@ -63,8 +63,12 @@ fun PhoneScreen(
 ) {
     val isGenerating by viewModel.phoneIsGenerating.collectAsState()
     val isSpeaking by viewModel.isSpeaking.collectAsState()
+    val callState by viewModel.phoneCallState.collectAsState()
+    val isCallActive = callState is com.nexus.companion.phone.PhoneCallService.CallState.Active
     val sttState by viewModel.sttState.collectAsState()
     val isListening = sttState is SpeechRecognizerManager.SttState.Listening
+    val sttStarting = sttState is SpeechRecognizerManager.SttState.Starting
+            || sttState is SpeechRecognizerManager.SttState.Idle
     val isProcessing = sttState is SpeechRecognizerManager.SttState.Processing
             || sttState is SpeechRecognizerManager.SttState.Done
     val sttText by viewModel.sttPartialText.collectAsState()
@@ -184,6 +188,7 @@ fun PhoneScreen(
             isGenerating -> "Nexus denkt nach..." to NexusPrimary
             isProcessing -> (sttText.ifBlank { "Verarbeite..." }) to NexusTextSecondary
             isListening -> "Hört zu..." to NexusPrimary
+            sttStarting && isCallActive -> "Verbinde..." to NexusTextDim
             sttText.isNotBlank() -> sttText to NexusTextSecondary
             else -> "Tippe auf das Mikrofon" to NexusTextDim
         }

@@ -380,7 +380,7 @@ fun ChatScreen(
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                 keyboardActions = KeyboardActions(
                     onSend = {
-                        if (inputText.isNotBlank() && !isGenerating) {
+                        if (inputText.isNotBlank() && !isGenerating && !isLoadingModel) {
                             viewModel.sendMessage(inputText.trim())
                             inputText = ""
                         }
@@ -394,7 +394,7 @@ fun ChatScreen(
 
             IconButton(
                 onClick = {
-                    if (inputText.isNotBlank() && !isGenerating) {
+                    if (inputText.isNotBlank() && !isGenerating && !isLoadingModel) {
                         viewModel.sendMessage(inputText.trim())
                         inputText = ""
                     }
@@ -402,7 +402,7 @@ fun ChatScreen(
                 modifier = Modifier
                     .size(48.dp)
                     .clip(CircleShape)
-                    .background(if (inputText.isNotBlank()) NexusPrimary else NexusSurfaceVariant)
+                    .background(if (inputText.isNotBlank() && !isLoadingModel) NexusPrimary else NexusSurfaceVariant)
             ) {
                 Icon(
                     Icons.AutoMirrored.Filled.Send,

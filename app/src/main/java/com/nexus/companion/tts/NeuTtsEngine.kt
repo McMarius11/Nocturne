@@ -118,14 +118,26 @@ class NeuTtsEngine(private val context: Context) {
             }
         }
 
-        // Fallback to Android System TTS
+        // Fallback to Android System TTS — wait for completion
         if (fallbackReady) {
+            val utteranceId = "nexus_tts_${System.currentTimeMillis()}"
+            val completionLatch = java.util.concurrent.CountDownLatch(1)
+
+            fallbackTts?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+                override fun onStart(id: String?) {}
+                override fun onDone(id: String?) { completionLatch.countDown() }
+                @Deprecated("Deprecated") override fun onError(id: String?) { completionLatch.countDown() }
+            })
+
             fallbackTts?.speak(
                 text,
                 android.speech.tts.TextToSpeech.QUEUE_FLUSH,
                 null,
-                "nexus_tts"
+                utteranceId
             )
+
+            // Wait for TTS to finish (max 30 seconds to prevent infinite block)
+            completionLatch.await(30, java.util.concurrent.TimeUnit.SECONDS)
         }
     }
 

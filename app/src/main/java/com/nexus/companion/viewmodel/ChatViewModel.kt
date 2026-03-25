@@ -125,6 +125,12 @@ Keep your responses natural and not too long."""
             if (modelToLoad != null && llmEngine.getModelManager().isModelDownloaded(modelToLoad)) {
                 loadModelInternal(modelToLoad)
             }
+
+            // Restore TTS model selection
+            val savedTtsId = settingsStore.getTtsModelId()
+            if (savedTtsId != null) {
+                _currentTtsModelId.value = savedTtsId
+            }
         }
     }
 
@@ -177,8 +183,7 @@ Keep your responses natural and not too long."""
                 Log.i(TAG, "Idle timeout (${IDLE_TIMEOUT_MS / 60000} min) — unloading LLM")
                 llmEngine.unload()
                 _isModelLoaded.value = false
-                // FIX #6: _currentModelId stays set so user sees "(aus)" in TopBar
-                // and can re-enable with toggle
+                _errorMessage.value = "LLM wurde nach 10 Min Inaktivität entladen. Tippe auf Senden zum Neuladen."
             }
         }
     }
@@ -203,26 +208,44 @@ Keep your responses natural and not too long."""
 
     fun sendMessage(text: String) {
         if (!llmEngine.isReady()) {
-            if (_currentModelId.value == null) {
+            val modelId = _currentModelId.value
+            if (modelId == null) {
                 _errorMessage.value = "Kein Modell geladen. Tippe auf \uD83E\uDDE0 um ein Modell herunterzuladen."
-            } else {
-                _errorMessage.value = "LLM ist ausgeschaltet. Bitte schalte es ein (⋮ Menü → LLM einschalten)."
+                return
             }
+            // Auto-reload if model was idle-unloaded
+            val model = ModelInfo.findById(modelId)
+            if (model != null && llmEngine.getModelManager().isModelDownloaded(model)) {
+                _errorMessage.value = null
+                viewModelScope.launch {
+                    loadModelInternal(model)
+                    // Retry sending after reload
+                    if (llmEngine.isReady()) {
+                        sendMessage(text)
+                    }
+                }
+                return
+            }
+            _errorMessage.value = "Modell nicht verfügbar. Bitte lade es erneut herunter."
             return
         }
 
         resetIdleTimer()
 
         viewModelScope.launch {
-            chatRepo.sendMessage("user", text)
+            // Extract memories BEFORE saving (so getRecentHistory doesn't include this message)
             memoryExtractor.extractAndStore(text)
             messageCount++
 
             _isGenerating.value = true
             _errorMessage.value = null
             try {
+                // Get history BEFORE saving current message (to avoid duplication)
                 val history = chatRepo.getRecentHistory(10)
                 val memoryContext = memoryExtractor.getMemoryContext(text)
+
+                // Save user message AFTER fetching history
+                chatRepo.sendMessage("user", text)
 
                 val response = llmEngine.generate(
                     systemPrompt = SYSTEM_PROMPT,
@@ -310,6 +333,7 @@ Keep your responses natural and not too long."""
         // "system" = revert to Android System TTS
         if (model.id == "system") {
             _currentTtsModelId.value = null
+            viewModelScope.launch { settingsStore.setTtsModelId(null) }
             return
         }
 
@@ -318,10 +342,7 @@ Keep your responses natural and not too long."""
 
         if (modelFile.exists()) {
             _currentTtsModelId.value = model.id
-            // FIX #1: Use separate settings key for TTS model
-            viewModelScope.launch {
-                settingsStore.setVoiceProfileId("tts:${model.id}")
-            }
+            viewModelScope.launch { settingsStore.setTtsModelId(model.id) }
         } else {
             // Download the TTS model
             val modelInfo = ModelInfo(
