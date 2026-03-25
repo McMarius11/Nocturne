@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -33,16 +32,21 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.RecordVoiceOver
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -56,15 +60,16 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.nexus.companion.llm.ModelManager
 import com.nexus.companion.ui.components.MessageBubble
 import com.nexus.companion.ui.components.ModelSwitcherSheet
 import com.nexus.companion.ui.components.VoiceSwitcherSheet
@@ -101,6 +106,7 @@ fun ChatScreen(
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
+    val isDownloading = downloadState is ModelManager.DownloadState.Downloading
 
     // Auto-scroll to bottom
     LaunchedEffect(messages.size) {
@@ -168,9 +174,7 @@ fun ChatScreen(
                             },
                             leadingIcon = {
                                 Icon(
-                                    if (isModelLoaded) Icons.Default.PowerSettingsNew
-                                    else Icons.Default.PowerSettingsNew,
-                                    null,
+                                    Icons.Default.PowerSettingsNew, null,
                                     tint = if (isModelLoaded) NexusPrimary else NexusSecondary
                                 )
                             }
@@ -190,7 +194,41 @@ fun ChatScreen(
             }
         )
 
-        // Messages
+        // Download progress bar (visible during model download)
+        if (isDownloading) {
+            val progress = (downloadState as ModelManager.DownloadState.Downloading).progress
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(NexusCard)
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        "Modell wird heruntergeladen...",
+                        fontSize = 12.sp,
+                        color = NexusTextSecondary
+                    )
+                    Text(
+                        "${(progress * 100).toInt()}%",
+                        fontSize = 12.sp,
+                        color = NexusPrimary
+                    )
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier.fillMaxWidth().height(3.dp),
+                    color = NexusPrimary,
+                    trackColor = NexusSurfaceVariant
+                )
+            }
+        }
+
+        // Messages or Welcome screen
         LazyColumn(
             modifier = Modifier
                 .weight(1f)
@@ -201,20 +239,82 @@ fun ChatScreen(
         ) {
             if (messages.isEmpty()) {
                 item {
+                    // Welcome / Onboarding
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 120.dp),
+                            .padding(top = 80.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("Nexus", fontSize = 32.sp, color = NexusPrimary)
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                "Say something... / Schreib mir etwas...",
-                                fontSize = 14.sp,
-                                color = NexusTextDim
-                            )
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(horizontal = 32.dp)
+                        ) {
+                            Text("Nexus", fontSize = 36.sp, color = NexusPrimary)
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            if (currentModel == null && downloadedModels.isEmpty()) {
+                                // First launch — no model downloaded
+                                Text(
+                                    "Willkommen! Um mit Nexus zu chatten,\nlade zuerst ein KI-Modell herunter.",
+                                    fontSize = 14.sp,
+                                    color = NexusTextSecondary,
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(20.dp))
+                                Button(
+                                    onClick = { showModelSwitcher = true },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = NexusPrimary,
+                                        contentColor = NexusBlack
+                                    ),
+                                    shape = RoundedCornerShape(24.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.CloudDownload, null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Modell herunterladen")
+                                }
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(
+                                    "Empfohlen: Gemma 3 4B (2.5 GB)\noder Qwen3 4B (2.7 GB)",
+                                    fontSize = 12.sp,
+                                    color = NexusTextDim,
+                                    textAlign = TextAlign.Center
+                                )
+                            } else if (!isModelLoaded && !isLoadingModel) {
+                                // Model downloaded but not loaded
+                                Text(
+                                    "Modell ist ausgeschaltet.",
+                                    fontSize = 14.sp,
+                                    color = NexusTextSecondary,
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                TextButton(
+                                    onClick = { viewModel.toggleModelLoaded() }
+                                ) {
+                                    Text("LLM einschalten", color = NexusPrimary)
+                                }
+                            } else if (isLoadingModel) {
+                                // Model is loading
+                                Text(
+                                    "Modell wird geladen...",
+                                    fontSize = 14.sp,
+                                    color = NexusPrimary,
+                                    textAlign = TextAlign.Center
+                                )
+                            } else {
+                                // Ready to chat
+                                Text(
+                                    "Schreib mir etwas...",
+                                    fontSize = 14.sp,
+                                    color = NexusTextDim,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
                         }
                     }
                 }
@@ -236,6 +336,22 @@ fun ChatScreen(
             }
         }
 
+        // Error bar (above input, not behind keyboard)
+        if (errorMessage != null) {
+            Snackbar(
+                action = {
+                    TextButton(onClick = { viewModel.clearError() }) {
+                        Text("OK", color = NexusPrimary)
+                    }
+                },
+                containerColor = NexusCard,
+                contentColor = NexusTextPrimary,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Text(errorMessage ?: "")
+            }
+        }
+
         // Input bar
         Row(
             modifier = Modifier
@@ -247,7 +363,7 @@ fun ChatScreen(
                 value = inputText,
                 onValueChange = { inputText = it },
                 placeholder = {
-                    Text("Message...", color = NexusTextDim)
+                    Text("Nachricht...", color = NexusTextDim)
                 },
                 modifier = Modifier
                     .weight(1f)
@@ -297,29 +413,7 @@ fun ChatScreen(
         }
     }
 
-    // Error snackbar
-    if (errorMessage != null) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp),
-            contentAlignment = Alignment.BottomCenter
-        ) {
-            Snackbar(
-                action = {
-                    TextButton(onClick = { viewModel.clearError() }) {
-                        Text("OK", color = NexusPrimary)
-                    }
-                },
-                containerColor = NexusCard,
-                contentColor = NexusTextPrimary
-            ) {
-                Text(errorMessage ?: "")
-            }
-        }
-    }
-
-    // Model switcher bottom sheet
+    // Model switcher bottom sheet (stays open during download)
     if (showModelSwitcher) {
         ModelSwitcherSheet(
             currentModelId = currentModel,
@@ -327,7 +421,10 @@ fun ChatScreen(
             downloadState = downloadState,
             onModelSelected = { model ->
                 viewModel.switchModel(model)
-                showModelSwitcher = false
+                // Only close if model is already downloaded
+                if (model.id in downloadedModels) {
+                    showModelSwitcher = false
+                }
             },
             onDismiss = { showModelSwitcher = false }
         )
@@ -357,10 +454,15 @@ fun ChatScreen(
 
     // Delete confirmation dialog
     if (showDeleteConfirm) {
-        androidx.compose.material3.AlertDialog(
+        AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
             title = { Text("Chat löschen?", color = NexusTextPrimary) },
-            text = { Text("Der gesamte Chatverlauf wird unwiderruflich gelöscht.", color = NexusTextSecondary) },
+            text = {
+                Text(
+                    "Der gesamte Chatverlauf wird unwiderruflich gelöscht.",
+                    color = NexusTextSecondary
+                )
+            },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.clearChat()
