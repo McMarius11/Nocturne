@@ -96,7 +96,7 @@ class ModelInfoTest {
         val downloading = ModelManager.DownloadState.Downloading("test", 0.5f)
         val error = ModelManager.DownloadState.Error("test error")
 
-        assertTrue(idle is ModelManager.DownloadState)
+        assertNotNull(idle)
         assertEquals("test", downloading.modelId)
         assertEquals(0.5f, downloading.progress, 0.001f)
         assertEquals("test error", error.message)

@@ -24,8 +24,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
-import androidx.compose.material.icons.filled.VolumeOff
-import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -229,7 +229,7 @@ fun PhoneScreen(
                     .background(if (isSpeakerOn) NexusPrimary.copy(alpha = 0.3f) else NexusSurfaceVariant)
             ) {
                 Icon(
-                    if (isSpeakerOn) Icons.Default.VolumeUp else Icons.Default.VolumeOff,
+                    if (isSpeakerOn) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff,
                     contentDescription = "Lautsprecher",
                     tint = if (isSpeakerOn) NexusPrimary else NexusTextDim,
                     modifier = Modifier.size(26.dp)

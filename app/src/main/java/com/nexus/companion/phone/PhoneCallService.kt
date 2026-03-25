@@ -11,8 +11,6 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
-import android.bluetooth.BluetoothAdapter
-import android.bluetooth.BluetoothProfile
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.IBinder
@@ -236,6 +234,7 @@ Keep your responses natural and not too long."""
         }
     }
 
+    @Suppress("DEPRECATION")
     private fun toggleSpeaker() {
         manualSpeakerOverride = true // User took control — don't auto-switch
         val newState = !_isSpeakerOn.value
@@ -395,9 +394,9 @@ Keep your responses natural and not too long."""
         sensorManager?.unregisterListener(this)
     }
 
+    @Suppress("DEPRECATION")
     override fun onSensorChanged(event: SensorEvent?) {
         if (event?.sensor?.type != Sensor.TYPE_PROXIMITY) return
-        // Don't auto-switch if user manually toggled the speaker
         if (manualSpeakerOverride) return
 
         val distance = event.values[0]
