@@ -97,6 +97,7 @@ class SpeechRecognizerManager(private val context: Context) {
     }
 
     fun stopListening() {
+        _state.value = SttState.Idle
         mainHandler.post {
             try {
                 recognizer?.stopListening()
@@ -104,7 +105,6 @@ class SpeechRecognizerManager(private val context: Context) {
                 Log.e(TAG, "stopListening failed", e)
             }
         }
-        _state.value = SttState.Idle
     }
 
     fun destroy() {

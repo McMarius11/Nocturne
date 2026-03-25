@@ -110,9 +110,21 @@ class NeuTtsEngine(private val context: Context) {
 
         try {
             val model = activeTtsModel!!
-            // Note: CsmEngine currently requires TTS model + vocoder.
-            // OuteTTS bundles both in one file for now.
-            val success = csmEngine?.loadModel(model, model) ?: false
+            // Neural TTS requires both a TTS model and a vocoder model.
+            // Currently OuteTTS GGUF files don't include a separate vocoder,
+            // so this will fail gracefully and fall back to system TTS.
+            // Full neural TTS support requires vocoder integration in llama.cpp.
+            val vocoderFile = java.io.File(modelsDir, "wavtokenizer-large-75.gguf")
+            if (!vocoderFile.exists()) {
+                Log.d(TAG, "Vocoder not found, neural TTS unavailable (using system TTS)")
+                return
+            }
+            val vocoderModel = TtsModelInfo(
+                id = "wavtokenizer", displayName = "WavTokenizer",
+                fileName = "wavtokenizer-large-75.gguf", downloadUrl = "",
+                sizeBytes = 0, languages = emptyList(), description = ""
+            )
+            val success = csmEngine?.loadModel(model, vocoderModel) ?: false
             if (success) {
                 Log.i(TAG, "Neural TTS model loaded: ${model.id}")
             }

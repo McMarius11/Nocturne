@@ -32,11 +32,18 @@ class MainActivity : ComponentActivity() {
         // Enable edge-to-edge for proper inset handling on Pixel 9 / Android 15+
         enableEdgeToEdge()
 
-        // Request microphone permission
+        // Request permissions
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED
         ) {
             permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+        // Notifications (Android 13+)
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
 
         setContent {

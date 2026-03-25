@@ -160,15 +160,13 @@ Java_com_nexus_companion_llm_LlamaJni_loadModel(
     // Initialize batch
     g_batch = llama_batch_init(BATCH_SIZE, 0, 1);
 
-    // Prompt formatting is handled in Kotlin (LlmEngine.buildPrompt)
-
     // Initialize sampler
     common_params_sampling sparams;
     sparams.temp = 0.7f;
     sparams.top_p = 0.9f;
     g_sampler = common_sampler_init(g_model, sparams);
 
-    LOGI("Model loaded: ctx=%d, threads=%d, template=%s", g_n_ctx, threads, has_template ? "yes" : "no");
+    LOGI("Model loaded: ctx=%d, threads=%d", g_n_ctx, threads);
     return JNI_TRUE;
 }
 

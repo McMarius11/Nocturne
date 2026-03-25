@@ -214,15 +214,18 @@ Keep your responses natural and not too long."""
                 _errorMessage.value = "Kein Modell geladen. Tippe auf \uD83E\uDDE0 um ein Modell herunterzuladen."
                 return
             }
-            // Auto-reload if model was idle-unloaded
+            // Auto-reload if model was idle-unloaded (one attempt only)
             val model = ModelInfo.findById(modelId)
             if (model != null && llmEngine.getModelManager().isModelDownloaded(model)) {
-                _errorMessage.value = null
+                _errorMessage.value = "Modell wird neu geladen..."
                 viewModelScope.launch {
                     loadModelInternal(model)
-                    // Retry sending after reload
                     if (llmEngine.isReady()) {
-                        sendMessage(text)
+                        _errorMessage.value = null
+                        // Directly execute send logic (not recursive call)
+                        executeSendMessage(text)
+                    } else {
+                        _errorMessage.value = "Modell konnte nicht geladen werden."
                     }
                 }
                 return
@@ -232,9 +235,10 @@ Keep your responses natural and not too long."""
         }
 
         resetIdleTimer()
+        viewModelScope.launch { executeSendMessage(text) }
+    }
 
-        viewModelScope.launch {
-            // Extract memories BEFORE saving (so getRecentHistory doesn't include this message)
+    private suspend fun executeSendMessage(text: String) {
             memoryExtractor.extractAndStore(text)
             messageCount++
 
@@ -287,7 +291,6 @@ Keep your responses natural and not too long."""
                 _isGenerating.value = false
                 resetIdleTimer()
             }
-        }
     }
 
     // ===== Model Management =====
