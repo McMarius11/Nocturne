@@ -218,7 +218,7 @@ Keep your responses natural and not too long."""
 
     fun startPhoneMode() {
         isPhoneMode = true
-        PhoneCallService.start(getApplication())
+        PhoneCallService.start(getApplication(), _currentModelId.value)
     }
 
     fun stopPhoneMode() {

@@ -21,6 +21,7 @@ import com.nexus.companion.VoiceProfile
 import com.nexus.companion.data.ChatDatabase
 import com.nexus.companion.data.ChatRepository
 import com.nexus.companion.llm.LlmEngine
+import com.nexus.companion.llm.ModelInfo
 import com.nexus.companion.memory.MemoryExtractor
 import com.nexus.companion.stt.SpeechRecognizerManager
 import com.nexus.companion.tts.NeuTtsEngine
@@ -49,6 +50,7 @@ class PhoneCallService : Service(), SensorEventListener {
         const val ACTION_STOP = "com.nexus.companion.PHONE_STOP"
         const val ACTION_TOGGLE_MIC = "com.nexus.companion.PHONE_TOGGLE_MIC"
         const val ACTION_TOGGLE_SPEAKER = "com.nexus.companion.PHONE_TOGGLE_SPEAKER"
+        const val EXTRA_MODEL_ID = "model_id"
 
         private val _callState = MutableStateFlow<CallState>(CallState.Idle)
         val callState: StateFlow<CallState> = _callState
@@ -67,9 +69,10 @@ class PhoneCallService : Service(), SensorEventListener {
         private val _isSpeakerOn = MutableStateFlow(true) // Speaker on by default
         val isSpeakerOn: StateFlow<Boolean> = _isSpeakerOn
 
-        fun start(context: Context) {
+        fun start(context: Context, modelId: String? = null) {
             val intent = Intent(context, PhoneCallService::class.java).apply {
                 action = ACTION_START
+                modelId?.let { putExtra(EXTRA_MODEL_ID, it) }
             }
             context.startForegroundService(intent)
         }
@@ -141,7 +144,10 @@ Keep your responses natural and not too long."""
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_START -> startCall()
+            ACTION_START -> {
+                val modelId = intent?.getStringExtra(EXTRA_MODEL_ID)
+                startCall(modelId)
+            }
             ACTION_STOP -> stopCall()
             ACTION_TOGGLE_MIC -> toggleMicrophone()
             ACTION_TOGGLE_SPEAKER -> toggleSpeaker()
@@ -149,18 +155,32 @@ Keep your responses natural and not too long."""
         return START_NOT_STICKY
     }
 
-    private fun startCall() {
+    private fun startCall(modelId: String?) {
         if (_callState.value is CallState.Active) return
 
-        startForeground(NOTIFICATION_ID, buildNotification("Sprachmodus aktiv"))
+        startForeground(NOTIFICATION_ID, buildNotification("Modell wird geladen..."))
         acquireWakeLocks()
         registerProximitySensor()
         requestAudioFocus()
 
         _callState.value = CallState.Active
 
-        // Start the STT -> LLM -> TTS conversation loop
-        startConversationLoop()
+        // Load the LLM model before starting the conversation
+        serviceScope.launch {
+            val model = modelId?.let { ModelInfo.findById(it) }
+            if (model != null && !llmEngine.isReady()) {
+                val success = llmEngine.loadModel(model)
+                if (!success) {
+                    Log.e(TAG, "Failed to load model: ${model.id}")
+                    updateNotification("Modell konnte nicht geladen werden")
+                    stopCall()
+                    return@launch
+                }
+            }
+
+            updateNotification("Sprachmodus aktiv")
+            startConversationLoop()
+        }
 
         Log.d(TAG, "Phone call started")
     }

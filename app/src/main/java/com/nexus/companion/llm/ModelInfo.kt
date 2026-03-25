@@ -2,7 +2,8 @@ package com.nexus.companion.llm
 
 enum class PromptFormat {
     ALPACA,      // ### Instruction / ### Input / ### Response (Noromaid, MythoMax)
-    GEMMA,       // <start_of_turn>user\n...<end_of_turn>
+    GEMMA2,      // <start_of_turn>user\n...<end_of_turn> (Gemma 2 — no system turn)
+    GEMMA3,      // <start_of_turn>system\n...<end_of_turn> (Gemma 3 — has system turn)
     CHATML       // <|im_start|>system\n...<|im_end|>
 }
 
@@ -55,7 +56,7 @@ data class ModelInfo(
             sizeBytes = 2_700_000_000L,
             batteryPerHour = 8,
             description = "Abliterated Gemma 3 — unzensiert, multilingual",
-            promptFormat = PromptFormat.GEMMA
+            promptFormat = PromptFormat.GEMMA3
         )
 
         val QWEN3_4B_ABLITERATED = ModelInfo(
@@ -81,7 +82,7 @@ data class ModelInfo(
             sizeBytes = 1_700_000_000L,
             batteryPerHour = 6,
             description = "Akkusparer — leicht und schnell",
-            promptFormat = PromptFormat.GEMMA
+            promptFormat = PromptFormat.GEMMA2
         )
 
         val ALL_MODELS = listOf(

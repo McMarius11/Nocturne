@@ -95,7 +95,8 @@ class LlmEngine(private val context: Context) {
         memoryContext: String
     ): String = when (format) {
         PromptFormat.ALPACA -> buildAlpacaPrompt(systemPrompt, history, userMessage, memoryContext)
-        PromptFormat.GEMMA -> buildGemmaPrompt(systemPrompt, history, userMessage, memoryContext)
+        PromptFormat.GEMMA2 -> buildGemma2Prompt(systemPrompt, history, userMessage, memoryContext)
+        PromptFormat.GEMMA3 -> buildGemma3Prompt(systemPrompt, history, userMessage, memoryContext)
         PromptFormat.CHATML -> buildChatMlPrompt(systemPrompt, history, userMessage, memoryContext)
     }
 
@@ -125,7 +126,7 @@ class LlmEngine(private val context: Context) {
         return sb.toString()
     }
 
-    private fun buildGemmaPrompt(
+    private fun buildGemma2Prompt(
         systemPrompt: String,
         history: List<Pair<String, String>>,
         userMessage: String,
@@ -133,13 +134,31 @@ class LlmEngine(private val context: Context) {
     ): String {
         val sb = StringBuilder()
         val system = buildSystemBlock(systemPrompt, memoryContext)
-        // Gemma uses <start_of_turn> / <end_of_turn> format
-        // System context goes in the first user turn
+        // Gemma 2 has no system turn — inject system prompt into first user turn
         for ((user, assistant) in history.takeLast(10)) {
             sb.append("<start_of_turn>user\n$user<end_of_turn>\n")
             sb.append("<start_of_turn>model\n$assistant<end_of_turn>\n")
         }
         sb.append("<start_of_turn>user\n$system\n\n$userMessage<end_of_turn>\n")
+        sb.append("<start_of_turn>model\n")
+        return sb.toString()
+    }
+
+    private fun buildGemma3Prompt(
+        systemPrompt: String,
+        history: List<Pair<String, String>>,
+        userMessage: String,
+        memoryContext: String
+    ): String {
+        val sb = StringBuilder()
+        val system = buildSystemBlock(systemPrompt, memoryContext)
+        // Gemma 3 supports a dedicated system turn
+        sb.append("<start_of_turn>system\n$system<end_of_turn>\n")
+        for ((user, assistant) in history.takeLast(10)) {
+            sb.append("<start_of_turn>user\n$user<end_of_turn>\n")
+            sb.append("<start_of_turn>model\n$assistant<end_of_turn>\n")
+        }
+        sb.append("<start_of_turn>user\n$userMessage<end_of_turn>\n")
         sb.append("<start_of_turn>model\n")
         return sb.toString()
     }

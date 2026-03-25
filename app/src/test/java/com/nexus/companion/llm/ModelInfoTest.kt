@@ -64,7 +64,7 @@ class ModelInfoTest {
     fun gemmaModelUsesGemmaFormat() {
         val gemma = ModelInfo.findById("gemma-2b")
         assertNotNull(gemma)
-        assertEquals(PromptFormat.GEMMA, gemma!!.promptFormat)
+        assertEquals(PromptFormat.GEMMA2, gemma!!.promptFormat)
     }
 
     @Test
@@ -78,7 +78,7 @@ class ModelInfoTest {
     fun gemma3HereticModelExists() {
         val model = ModelInfo.findById("gemma3-4b-heretic")
         assertNotNull(model)
-        assertEquals(PromptFormat.GEMMA, model!!.promptFormat)
+        assertEquals(PromptFormat.GEMMA3, model!!.promptFormat)
         assertTrue(model.sizeGb < 3.0f)
     }
 
