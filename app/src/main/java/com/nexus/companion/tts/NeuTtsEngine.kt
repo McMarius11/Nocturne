@@ -75,21 +75,46 @@ class NeuTtsEngine(private val context: Context) {
     fun isNeuralTtsAvailable(): Boolean = neuralTtsReady
 
     /**
+     * Try to load the neural TTS model if files are present but engine not ready.
+     */
+    suspend fun tryLoadNeuralTts() {
+        if (csmEngine?.isReady() == true) return
+        if (!neuralTtsReady) return
+
+        try {
+            val success = csmEngine?.loadModel(
+                TtsModelInfo.OUTETTS_500M,
+                TtsModelInfo.OUTETTS_500M // vocoder bundled in OuteTTS GGUF
+            ) ?: false
+            if (success) {
+                Log.i(TAG, "Neural TTS model loaded")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to load neural TTS model", e)
+        }
+    }
+
+    /**
      * Speak text using the best available TTS backend.
      * Priority: Neural TTS (OuteTTS) > Android System TTS
      */
     suspend fun speak(text: String) = withContext(Dispatchers.IO) {
-        // Try neural TTS first
-        if (neuralTtsReady && csmEngine?.isReady() == true) {
-            try {
-                val speakerId = when {
-                    currentProfile.ttsLocale.language == "de" -> "de_female_1"
-                    else -> "en_male_1"
+        // Try neural TTS first — load on first use if needed
+        if (neuralTtsReady) {
+            if (csmEngine?.isReady() != true) {
+                tryLoadNeuralTts()
+            }
+            if (csmEngine?.isReady() == true) {
+                try {
+                    val speakerId = when {
+                        currentProfile.ttsLocale.language == "de" -> "de_female_1"
+                        else -> "en_male_1"
+                    }
+                    csmEngine?.speak(text, speakerId)
+                    return@withContext
+                } catch (e: Exception) {
+                    Log.w(TAG, "Neural TTS failed, falling back to system TTS", e)
                 }
-                csmEngine?.speak(text, speakerId)
-                return@withContext
-            } catch (e: Exception) {
-                Log.w(TAG, "Neural TTS failed, falling back to system TTS", e)
             }
         }
 

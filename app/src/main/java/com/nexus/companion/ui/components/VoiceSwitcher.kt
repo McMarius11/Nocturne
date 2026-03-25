@@ -114,7 +114,11 @@ fun VoiceSwitcherSheet(
                 description = "Standard — immer verfügbar, kein Download nötig",
                 languages = "DE + EN",
                 isSelected = currentTtsModelId == null,
-                onClick = { /* already default */ }
+                onClick = { onTtsModelSelected(TtsModelInfo(
+                    id = "system", displayName = "System TTS", fileName = "",
+                    downloadUrl = "", sizeBytes = 0, languages = listOf("de", "en"),
+                    description = ""
+                )) }
             )
             Spacer(modifier = Modifier.height(6.dp))
 

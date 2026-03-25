@@ -197,9 +197,12 @@ Keep your responses natural and not too long."""
     // ===== Chat =====
 
     fun sendMessage(text: String) {
-        // FIX #3: Check if model is loaded BEFORE saving message
         if (!llmEngine.isReady()) {
-            _errorMessage.value = "LLM ist ausgeschaltet. Bitte schalte es ein (⋮ Menü → LLM einschalten)."
+            if (_currentModelId.value == null) {
+                _errorMessage.value = "Kein Modell geladen. Tippe auf \uD83E\uDDE0 um ein Modell herunterzuladen."
+            } else {
+                _errorMessage.value = "LLM ist ausgeschaltet. Bitte schalte es ein (⋮ Menü → LLM einschalten)."
+            }
             return
         }
 
@@ -299,6 +302,12 @@ Keep your responses natural and not too long."""
     // ===== TTS Model Management =====
 
     fun selectTtsModel(model: TtsModelInfo) {
+        // "system" = revert to Android System TTS
+        if (model.id == "system") {
+            _currentTtsModelId.value = null
+            return
+        }
+
         val modelsDir = java.io.File(getApplication<Application>().filesDir, "models")
         val modelFile = java.io.File(modelsDir, model.fileName)
 

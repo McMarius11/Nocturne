@@ -251,7 +251,10 @@ Conversation:"""
 
             val match = pattern.regex.find(text) ?: continue
 
-            val value = if (match.groupValues.size > 2) {
+            // For patterns with $1 in key (e.g. favorite_$1), use the LAST group as value
+            val value = if (pattern.key.contains("\$1") && match.groupValues.size > 2) {
+                match.groupValues.last().trim()
+            } else if (match.groupValues.size > 2) {
                 match.groupValues.drop(1).joinToString(" ")
             } else {
                 match.groupValues[1].trim()

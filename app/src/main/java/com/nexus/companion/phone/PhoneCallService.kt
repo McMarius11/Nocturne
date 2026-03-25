@@ -105,6 +105,7 @@ class PhoneCallService : Service(), SensorEventListener {
     private var proximityWakeLock: PowerManager.WakeLock? = null
     private var sensorManager: SensorManager? = null
     private var audioManager: AudioManager? = null
+    private var manualSpeakerOverride = false // true = user manually toggled speaker
 
     // Core components — created in onCreate, cleaned up in onDestroy
     private lateinit var sttManager: SpeechRecognizerManager
@@ -229,6 +230,7 @@ Keep your responses natural and not too long."""
     }
 
     private fun toggleSpeaker() {
+        manualSpeakerOverride = true // User took control — don't auto-switch
         val newState = !_isSpeakerOn.value
         _isSpeakerOn.value = newState
         audioManager?.isSpeakerphoneOn = newState
@@ -321,6 +323,8 @@ Keep your responses natural and not too long."""
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error in conversation loop", e)
+                // Save error response to prevent orphaned user messages in DB
+                chatRepo.sendMessage("assistant", "Entschuldigung, da ist etwas schiefgelaufen.")
             } finally {
                 _isGenerating.value = false
                 updateNotification("Sprachmodus aktiv")
@@ -383,11 +387,12 @@ Keep your responses natural and not too long."""
 
     override fun onSensorChanged(event: SensorEvent?) {
         if (event?.sensor?.type != Sensor.TYPE_PROXIMITY) return
+        // Don't auto-switch if user manually toggled the speaker
+        if (manualSpeakerOverride) return
+
         val distance = event.values[0]
         val isNear = distance < (event.sensor.maximumRange / 2)
 
-        // Auto-switch audio routing based on proximity
-        // Only auto-switch if user hasn't manually set speaker off
         if (isNear) {
             _isSpeakerOn.value = false
             audioManager?.mode = AudioManager.MODE_IN_COMMUNICATION

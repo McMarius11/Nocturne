@@ -25,6 +25,7 @@ static common_chat_templates_ptr     g_chat_templates;
 static common_sampler               *g_sampler = nullptr;
 static std::mutex                    g_mutex;
 static volatile bool                 g_abort = false;
+static bool                          g_backend_initialized = false;
 
 // Position tracking for context management
 static std::vector<common_chat_msg>  g_chat_msgs;
@@ -140,9 +141,12 @@ Java_com_nexus_companion_llm_LlamaJni_loadModel(
     g_chat_templates.reset();
     reset_state(false);
 
-    // Initialize backend
-    llama_backend_init();
-    LOGI("Backend initialized");
+    // Initialize backend (only once)
+    if (!g_backend_initialized) {
+        llama_backend_init();
+        g_backend_initialized = true;
+        LOGI("Backend initialized");
+    }
 
     const char *path = env->GetStringUTFChars(modelPath, nullptr);
     LOGI("Loading model: %s", path);
@@ -213,10 +217,10 @@ Java_com_nexus_companion_llm_LlamaJni_generate(
     // Reset state for fresh generation
     reset_state(true);
 
-    bool has_template = common_chat_templates_was_explicit(g_chat_templates.get());
-
-    // Tokenize the prompt
-    auto tokens = common_tokenize(g_context, promptCpp, has_template, has_template);
+    // The prompt is already formatted by the Kotlin layer (LlmEngine.buildPrompt),
+    // so we always tokenize as raw text — do NOT apply chat templates again.
+    // add_special=true adds BOS token, parse_special=true handles special tokens in text.
+    auto tokens = common_tokenize(g_context, promptCpp, true, true);
     LOGI("Prompt tokenized: %d tokens", (int)tokens.size());
 
     if (tokens.empty()) {
@@ -297,7 +301,10 @@ Java_com_nexus_companion_llm_LlamaJni_unloadModel(JNIEnv *, jobject) {
     }
     if (g_model) { llama_model_free(g_model); g_model = nullptr; }
     g_chat_templates.reset();
-    llama_backend_free();
+    if (g_backend_initialized) {
+        llama_backend_free();
+        g_backend_initialized = false;
+    }
     LOGI("Model unloaded");
 }
 
