@@ -3,6 +3,7 @@ package com.nexus.companion.llm
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
 class LlmEngine(private val context: Context) {
@@ -26,10 +27,17 @@ class LlmEngine(private val context: Context) {
 
     suspend fun loadModel(model: ModelInfo): Boolean = withContext(Dispatchers.IO) {
         try {
-            // Download if not present
+            // Download if not present (via ForegroundService with WakeLock)
             if (!modelManager.isModelDownloaded(model)) {
-                val downloaded = modelManager.downloadModel(model)
-                if (!downloaded) return@withContext false
+                val started = modelManager.startDownload(model)
+                if (!started) return@withContext false
+
+                // Wait for download to complete
+                modelManager.downloadProgress.first { state ->
+                    state is ModelManager.DownloadState.Idle || state is ModelManager.DownloadState.Error
+                }
+
+                if (!modelManager.isModelDownloaded(model)) return@withContext false
             }
 
             // Unload previous
