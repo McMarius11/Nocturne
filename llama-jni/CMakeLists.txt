@@ -24,6 +24,12 @@ add_subdirectory(${LLAMA_CPP_DIR} ${CMAKE_CURRENT_BINARY_DIR}/llama.cpp)
 # JNI bridge shared library (LLM + TTS)
 add_library(nexus-llama SHARED llama_jni.cpp tts_jni.cpp)
 
+# Include paths for llama.cpp common headers (sampling.h, common.h, etc.)
+target_include_directories(nexus-llama PRIVATE
+    ${LLAMA_CPP_DIR}/common
+    ${LLAMA_CPP_DIR}/include
+)
+
 # Link llama + common (for chat templates, sampling, tokenization)
 target_link_libraries(nexus-llama PRIVATE llama common android log)
 target_compile_options(nexus-llama PRIVATE -O3)
