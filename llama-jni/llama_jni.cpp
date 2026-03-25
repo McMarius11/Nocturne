@@ -142,6 +142,7 @@ Java_com_nexus_companion_llm_LlamaJni_loadModel(
 
     // Initialize backend
     llama_backend_init();
+    LOGI("Backend initialized");
 
     const char *path = env->GetStringUTFChars(modelPath, nullptr);
     LOGI("Loading model: %s", path);
@@ -296,6 +297,7 @@ Java_com_nexus_companion_llm_LlamaJni_unloadModel(JNIEnv *, jobject) {
     }
     if (g_model) { llama_model_free(g_model); g_model = nullptr; }
     g_chat_templates.reset();
+    llama_backend_free();
     LOGI("Model unloaded");
 }
 
