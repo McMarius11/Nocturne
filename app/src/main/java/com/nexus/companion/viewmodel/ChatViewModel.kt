@@ -108,17 +108,22 @@ Keep your responses natural and not too long."""
         }
     }
 
+    private var messageCount = 0
+
     fun sendMessage(text: String) {
         viewModelScope.launch {
             chatRepo.sendMessage("user", text)
 
+            // Extract memories from user message
             memoryExtractor.extractAndStore(text)
+            messageCount++
 
             _isGenerating.value = true
             _errorMessage.value = null
             try {
                 val history = chatRepo.getRecentHistory(10)
-                val memoryContext = memoryExtractor.getMemoryContext()
+                // Relevance-based memory context (passes current message for keyword matching)
+                val memoryContext = memoryExtractor.getMemoryContext(text)
 
                 val response = llmEngine.generate(
                     systemPrompt = SYSTEM_PROMPT,
@@ -131,6 +136,29 @@ Keep your responses natural and not too long."""
                 val cleanResponse = response.trim()
                 if (cleanResponse.isNotBlank() && cleanResponse != "[Model not loaded]") {
                     chatRepo.sendMessage("assistant", cleanResponse)
+
+                    // Extract memories from assistant response too
+                    memoryExtractor.extractFromAssistant(cleanResponse)
+
+                    // Generate conversation summary every 10 messages
+                    if (memoryExtractor.shouldSummarize(messageCount)) {
+                        val summaryPrompt = "Summarize this conversation in 1-2 sentences: " +
+                            history.takeLast(5).joinToString(" ") { "${it.first} → ${it.second}" }
+                        // Use a short LLM call for summary
+                        try {
+                            val summary = llmEngine.generate(
+                                systemPrompt = "You are a summarizer. Write a brief 1-2 sentence summary.",
+                                chatHistory = emptyList(),
+                                userMessage = summaryPrompt,
+                                maxTokens = 100
+                            ).trim()
+                            if (summary.isNotBlank() && summary != "[Model not loaded]") {
+                                memoryExtractor.storeSummary(summary)
+                            }
+                        } catch (_: Exception) {
+                            // Summary generation is best-effort
+                        }
+                    }
                 } else if (cleanResponse == "[Model not loaded]") {
                     _errorMessage.value = "Kein Modell geladen. Bitte wähle ein Modell aus."
                 }

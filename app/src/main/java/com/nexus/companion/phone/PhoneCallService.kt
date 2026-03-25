@@ -257,9 +257,9 @@ Keep your responses natural and not too long."""
                 chatRepo.sendMessage("user", text)
                 memoryExtractor.extractAndStore(text)
 
-                // Generate response
+                // Generate response with relevance-based memory
                 val history = chatRepo.getRecentHistory(10)
-                val memoryContext = memoryExtractor.getMemoryContext()
+                val memoryContext = memoryExtractor.getMemoryContext(text)
 
                 val response = llmEngine.generate(
                     systemPrompt = systemPrompt,
@@ -272,6 +272,7 @@ Keep your responses natural and not too long."""
                 val cleanResponse = response.trim()
                 if (cleanResponse.isNotBlank() && cleanResponse != "[Model not loaded]") {
                     chatRepo.sendMessage("assistant", cleanResponse)
+                    memoryExtractor.extractFromAssistant(cleanResponse)
 
                     // Speak the response
                     updateNotification("Nexus spricht...")
