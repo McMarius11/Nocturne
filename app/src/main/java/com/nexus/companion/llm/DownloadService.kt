@@ -38,6 +38,10 @@ class DownloadService : Service() {
         const val ACTION_START = "com.nexus.companion.DOWNLOAD_START"
         const val ACTION_CANCEL = "com.nexus.companion.DOWNLOAD_CANCEL"
         const val EXTRA_MODEL_ID = "model_id"
+        const val EXTRA_MODEL_NAME = "model_name"
+        const val EXTRA_MODEL_FILE = "model_file"
+        const val EXTRA_MODEL_URL = "model_url"
+        const val EXTRA_MODEL_SIZE = "model_size"
 
         // Shared download state accessible from ModelManager
         internal val _downloadProgress = MutableStateFlow<ModelManager.DownloadState>(ModelManager.DownloadState.Idle)
@@ -47,6 +51,10 @@ class DownloadService : Service() {
             val intent = Intent(context, DownloadService::class.java).apply {
                 action = ACTION_START
                 putExtra(EXTRA_MODEL_ID, model.id)
+                putExtra(EXTRA_MODEL_NAME, model.displayName)
+                putExtra(EXTRA_MODEL_FILE, model.fileName)
+                putExtra(EXTRA_MODEL_URL, model.downloadUrl)
+                putExtra(EXTRA_MODEL_SIZE, model.sizeBytes)
             }
             context.startForegroundService(intent)
         }
@@ -83,7 +91,21 @@ class DownloadService : Service() {
         when (intent?.action) {
             ACTION_START -> {
                 val modelId = intent.getStringExtra(EXTRA_MODEL_ID)
-                val model = modelId?.let { ModelInfo.findById(it) }
+                // Try to find in known LLM models first, then reconstruct from extras
+                val model = modelId?.let { id ->
+                    ModelInfo.findById(id) ?: run {
+                        // Reconstruct from intent extras (for TTS models etc.)
+                        val name = intent.getStringExtra(EXTRA_MODEL_NAME) ?: return@run null
+                        val file = intent.getStringExtra(EXTRA_MODEL_FILE) ?: return@run null
+                        val url = intent.getStringExtra(EXTRA_MODEL_URL) ?: return@run null
+                        val size = intent.getLongExtra(EXTRA_MODEL_SIZE, 0L)
+                        ModelInfo(
+                            id = id, displayName = name, fileName = file,
+                            downloadUrl = url, sizeGb = size / 1_000_000_000f,
+                            sizeBytes = size, batteryPerHour = 0, description = ""
+                        )
+                    }
+                }
                 if (model != null) {
                     startForeground(NOTIFICATION_ID, buildNotification("Vorbereitung...", 0))
                     startModelDownload(model)
