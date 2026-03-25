@@ -18,7 +18,8 @@ class ModelManager(private val context: Context) {
 
     fun isModelDownloaded(model: ModelInfo): Boolean {
         val file = getModelPath(model)
-        return file.exists() && file.length() > (model.sizeBytes * 0.9)
+        // Check file exists and is at least 100MB (to catch corrupt/empty files)
+        return file.exists() && file.length() > 100_000_000L
     }
 
     fun getDownloadedModels(): List<ModelInfo> =
