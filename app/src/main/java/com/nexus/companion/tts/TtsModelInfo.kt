@@ -1,8 +1,11 @@
 package com.nexus.companion.tts
 
 /**
- * Available TTS models. OuteTTS 0.3 supports DE + EN + FR + JP + KO + ZH.
- * Kokoro is English-focused with experimental German support.
+ * Available TTS models for neural voice synthesis.
+ *
+ * NeuTTS Nano: Purpose-built for mobile, separate models per language (~195 MB each).
+ * Kokoro: Multilingual (v1.0+), single model, ~198 MB, DE+EN in one file.
+ * OuteTTS: Multilingual, larger but high quality, DE+EN+4 more languages.
  */
 data class TtsModelInfo(
     val id: String,
@@ -14,37 +17,69 @@ data class TtsModelInfo(
     val description: String
 ) {
     companion object {
-        val OUTETSS_500M = TtsModelInfo(
-            id = "outetts-0.3-500m",
-            displayName = "OuteTTS 0.3 (500M)",
-            fileName = "OuteTTS-0.3-500M-Q8_0.gguf",
-            downloadUrl = "https://huggingface.co/OuteAI/OuteTTS-0.3-500M-GGUF/resolve/main/OuteTTS-0.3-500M-Q8_0.gguf",
-            sizeBytes = 530_000_000L,
-            languages = listOf("de", "en", "fr", "jp", "ko", "zh"),
-            description = "Deutsch + Englisch — leicht, 500M Parameter"
+        // --- NeuTTS Nano (best for mobile, already integrated in NeuTtsEngine) ---
+
+        val NEUTTS_NANO_EN = TtsModelInfo(
+            id = "neutts-nano-en",
+            displayName = "NeuTTS Nano (English)",
+            fileName = "neutts-nano-Q4_0.gguf",
+            downloadUrl = "https://huggingface.co/neuphonic/neutts-nano-q4-gguf/resolve/main/neutts-nano-Q4_0.gguf",
+            sizeBytes = 195_000_000L,
+            languages = listOf("en"),
+            description = "Englisch — ultraleicht, optimiert für Mobile"
         )
 
-        val OUTETSS_1B = TtsModelInfo(
-            id = "outetts-0.3-1b",
-            displayName = "OuteTTS 0.3 (1B)",
-            fileName = "OuteTTS-0.3-1B-Q8_0.gguf",
-            downloadUrl = "https://huggingface.co/OuteAI/OuteTTS-0.3-1B-GGUF/resolve/main/OuteTTS-0.3-1B-Q8_0.gguf",
-            sizeBytes = 1_200_000_000L,
-            languages = listOf("de", "en", "fr", "jp", "ko", "zh"),
-            description = "Deutsch + Englisch — beste Qualität, 1B Parameter"
+        val NEUTTS_NANO_DE = TtsModelInfo(
+            id = "neutts-nano-de",
+            displayName = "NeuTTS Nano (Deutsch)",
+            fileName = "neutts-nano-german-Q4_0.gguf",
+            downloadUrl = "https://huggingface.co/neuphonic/neutts-nano-german-q4-gguf/resolve/main/neutts-nano-german-Q4_0.gguf",
+            sizeBytes = 195_000_000L,
+            languages = listOf("de"),
+            description = "Deutsch — ultraleicht, optimiert für Mobile"
         )
+
+        // --- Kokoro (single model, multilingual DE+EN) ---
 
         val KOKORO_82M = TtsModelInfo(
             id = "kokoro-82m",
             displayName = "Kokoro 82M",
-            fileName = "kokoro-v1.0-Q8_0.gguf",
-            downloadUrl = "https://huggingface.co/mmwillet2/Kokoro_GGUF/resolve/main/kokoro-v1.0-Q8_0.gguf",
-            sizeBytes = 90_000_000L,
-            languages = listOf("en"),
-            description = "Englisch — ultraleicht, 82M Parameter"
+            fileName = "Kokoro_no_espeak_Q4.gguf",
+            downloadUrl = "https://huggingface.co/mmwillet2/Kokoro_GGUF/resolve/main/Kokoro_no_espeak_Q4.gguf",
+            sizeBytes = 198_000_000L,
+            languages = listOf("en", "de"),
+            description = "Deutsch + Englisch — ein Modell, 82M Parameter"
         )
 
-        val ALL_TTS_MODELS = listOf(OUTETSS_500M, OUTETSS_1B, KOKORO_82M)
+        // --- OuteTTS (high quality multilingual) ---
+
+        val OUTETTS_500M = TtsModelInfo(
+            id = "outetts-0.3-500m",
+            displayName = "OuteTTS 0.3 (500M)",
+            fileName = "OuteTTS-0.3-500M-Q4_K_M.gguf",
+            downloadUrl = "https://huggingface.co/OuteAI/OuteTTS-0.3-500M-GGUF/resolve/main/OuteTTS-0.3-500M-Q4_K_M.gguf",
+            sizeBytes = 403_000_000L,
+            languages = listOf("de", "en", "fr", "jp", "ko", "zh"),
+            description = "Deutsch + Englisch + 4 Sprachen — 500M"
+        )
+
+        val OUTETTS_1B = TtsModelInfo(
+            id = "outetts-0.3-1b",
+            displayName = "OuteTTS 0.3 (1B)",
+            fileName = "OuteTTS-0.3-1B-Q4_K_M.gguf",
+            downloadUrl = "https://huggingface.co/OuteAI/OuteTTS-0.3-1B-GGUF/resolve/main/OuteTTS-0.3-1B-Q4_K_M.gguf",
+            sizeBytes = 800_000_000L,
+            languages = listOf("de", "en", "fr", "jp", "ko", "zh"),
+            description = "Deutsch + Englisch — beste Qualität, 1B"
+        )
+
+        val ALL_TTS_MODELS = listOf(
+            NEUTTS_NANO_EN,
+            NEUTTS_NANO_DE,
+            KOKORO_82M,
+            OUTETTS_500M,
+            OUTETTS_1B
+        )
 
         fun findById(id: String): TtsModelInfo? = ALL_TTS_MODELS.find { it.id == id }
     }
