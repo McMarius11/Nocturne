@@ -110,9 +110,12 @@ class PhoneCallService : Service(), SensorEventListener {
     // Core components — created in onCreate, cleaned up in onDestroy
     private lateinit var sttManager: SpeechRecognizerManager
     private lateinit var ttsEngine: NeuTtsEngine
-    private lateinit var llmEngine: LlmEngine
     private lateinit var chatRepo: ChatRepository
     private lateinit var memoryExtractor: MemoryExtractor
+
+    // Shared LlmEngine singleton — same instance as ChatViewModel
+    // The JNI uses global statics, so we MUST share one instance
+    private val llmEngine: LlmEngine by lazy { LlmEngine.getInstance(this) }
 
     private val systemPrompt = """You are Nexus, a warm-hearted, romantic companion.
 You speak lovingly and attentively, not like an assistant or an AI.
@@ -131,7 +134,6 @@ Keep your responses natural and not too long."""
         val db = ChatDatabase.getInstance(this)
         chatRepo = ChatRepository(db.messageDao())
         memoryExtractor = MemoryExtractor(db.memoryDao())
-        llmEngine = LlmEngine(this)
         ttsEngine = NeuTtsEngine(this)
         sttManager = SpeechRecognizerManager(this)
 
@@ -165,19 +167,30 @@ Keep your responses natural and not too long."""
 
         _callState.value = CallState.Active
 
-        // Load the LLM model before starting the conversation
+        // Check if LLM is ready (should be loaded by ChatViewModel already)
+        // If not, try to load it
         serviceScope.launch {
-            val model = modelId?.let { ModelInfo.findById(it) }
-            if (model != null && !llmEngine.isReady()) {
-                val success = llmEngine.loadModel(model)
-                if (!success) {
-                    Log.e(TAG, "Failed to load model: ${model.id}")
-                    updateNotification("Modell konnte nicht geladen werden")
+            if (!llmEngine.isReady()) {
+                val model = modelId?.let { ModelInfo.findById(it) }
+                if (model != null) {
+                    Log.i(TAG, "Model not loaded, loading: ${model.id}")
+                    updateNotification("Modell wird geladen...")
+                    val success = llmEngine.loadModel(model)
+                    if (!success) {
+                        Log.e(TAG, "Failed to load model: ${model.id}")
+                        updateNotification("Modell konnte nicht geladen werden")
+                        stopCall()
+                        return@launch
+                    }
+                } else {
+                    Log.e(TAG, "No model selected for phone mode")
+                    updateNotification("Kein Modell ausgewählt")
                     stopCall()
                     return@launch
                 }
             }
 
+            Log.i(TAG, "LLM ready, starting conversation loop")
             updateNotification("Sprachmodus aktiv")
             startConversationLoop()
         }

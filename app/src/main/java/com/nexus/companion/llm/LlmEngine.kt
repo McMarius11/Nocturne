@@ -10,6 +10,17 @@ class LlmEngine(private val context: Context) {
 
     companion object {
         private const val TAG = "LlmEngine"
+
+        // Singleton — the JNI layer uses global statics, so only one
+        // LlmEngine should exist. PhoneCallService reuses this instance.
+        @Volatile
+        private var INSTANCE: LlmEngine? = null
+
+        fun getInstance(context: Context): LlmEngine {
+            return INSTANCE ?: synchronized(this) {
+                INSTANCE ?: LlmEngine(context.applicationContext).also { INSTANCE = it }
+            }
+        }
     }
 
     private val jni = LlamaJni()

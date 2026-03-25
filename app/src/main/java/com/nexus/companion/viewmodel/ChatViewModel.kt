@@ -27,7 +27,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val db = ChatDatabase.getInstance(application)
     private val chatRepo = ChatRepository(db.messageDao())
     private val memoryExtractor = MemoryExtractor(db.memoryDao())
-    private val llmEngine = LlmEngine(application)
+    private val llmEngine = LlmEngine.getInstance(application)
     private val settingsStore = SettingsStore(application)
     val ttsEngine = NeuTtsEngine(application)
     val sttManager = SpeechRecognizerManager(application)
