@@ -11,6 +11,15 @@ android {
 
     ndkVersion = "27.2.12479018"
 
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("../debug.keystore")
+            storePassword = "nexusdebug"
+            keyAlias = "nexus-debug"
+            keyPassword = "nexusdebug"
+        }
+    }
+
     defaultConfig {
         applicationId = "com.nexus.companion"
         minSdk = 28
@@ -40,6 +49,9 @@ android {
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("debug")
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
