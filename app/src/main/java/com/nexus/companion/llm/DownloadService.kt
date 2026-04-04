@@ -24,7 +24,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
+import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
+import java.io.BufferedInputStream
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
 
@@ -42,6 +46,7 @@ class DownloadService : Service() {
         const val EXTRA_MODEL_FILE = "model_file"
         const val EXTRA_MODEL_URL = "model_url"
         const val EXTRA_MODEL_SIZE = "model_size"
+        const val EXTRA_IS_TTS_ARCHIVE = "is_tts_archive"
 
         // LLM download state
         internal val _downloadProgress = MutableStateFlow<ModelManager.DownloadState>(ModelManager.DownloadState.Idle)
@@ -59,6 +64,20 @@ class DownloadService : Service() {
                 putExtra(EXTRA_MODEL_FILE, model.fileName)
                 putExtra(EXTRA_MODEL_URL, model.downloadUrl)
                 putExtra(EXTRA_MODEL_SIZE, model.sizeBytes)
+            }
+            context.startForegroundService(intent)
+        }
+
+        /** Start a TTS model download (tar.bz2 archive → extract to tts-models/) */
+        fun startTtsDownload(context: Context, model: com.nexus.companion.tts.TtsModelInfo) {
+            val intent = Intent(context, DownloadService::class.java).apply {
+                action = ACTION_START
+                putExtra(EXTRA_MODEL_ID, model.id)
+                putExtra(EXTRA_MODEL_NAME, model.displayName)
+                putExtra(EXTRA_MODEL_FILE, model.fileName)
+                putExtra(EXTRA_MODEL_URL, model.downloadUrl)
+                putExtra(EXTRA_MODEL_SIZE, model.sizeBytes)
+                putExtra(EXTRA_IS_TTS_ARCHIVE, true)
             }
             context.startForegroundService(intent)
         }
@@ -85,6 +104,11 @@ class DownloadService : Service() {
 
     private val modelsDir: File
         get() = File(filesDir, "models").also { it.mkdirs() }
+
+    private val ttsModelsDir: File
+        get() = File(filesDir, "tts-models").also { it.mkdirs() }
+
+    private var isTtsArchiveDownload = false
 
     /** Update the correct download progress flow based on download type */
     private fun setProgress(state: ModelManager.DownloadState) {
@@ -122,7 +146,8 @@ class DownloadService : Service() {
                     }
                 }
                 if (model != null) {
-                    isTtsDownload = ModelInfo.findById(model.id) == null
+                    isTtsArchiveDownload = intent.getBooleanExtra(EXTRA_IS_TTS_ARCHIVE, false)
+                    isTtsDownload = isTtsArchiveDownload || ModelInfo.findById(model.id) == null
                     startForeground(NOTIFICATION_ID, buildNotification("Vorbereitung...", 0))
                     startModelDownload(model)
                 } else {
@@ -143,7 +168,24 @@ class DownloadService : Service() {
             acquireWakeLock()
             try {
                 val success = performDownload(model)
-                if (success) {
+                if (success && isTtsArchiveDownload) {
+                    // Extract tar.bz2 archive to tts-models/<model-id>/
+                    updateNotification("${model.displayName} wird entpackt...", 99)
+                    val archiveFile = File(modelsDir, model.fileName)
+                    val extractDir = File(ttsModelsDir, model.id)
+                    val extracted = extractTarBz2(archiveFile, extractDir)
+                    archiveFile.delete() // Remove archive after extraction
+                    if (extracted) {
+                        // Copy espeak-ng-data to shared location if found
+                        copyEspeakDataIfPresent(extractDir)
+                        updateNotification("${model.displayName} bereit", 100)
+                        DebugLog.tts("TTS model extracted: ${model.id} → ${extractDir.absolutePath}")
+                    } else {
+                        setProgress(ModelManager.DownloadState.Error("Entpacken fehlgeschlagen"))
+                        updateNotification("Entpacken fehlgeschlagen", 0)
+                    }
+                    setProgress(ModelManager.DownloadState.Idle)
+                } else if (success) {
                     updateNotification("${model.displayName} heruntergeladen", 100)
                     setProgress(ModelManager.DownloadState.Idle)
                 }
@@ -283,6 +325,79 @@ class DownloadService : Service() {
         setProgress(ModelManager.DownloadState.Error("Download fehlgeschlagen nach 3 Versuchen: $lastError"))
         updateNotification("Download fehlgeschlagen", 0)
         return false
+    }
+
+    /**
+     * Extract a tar.bz2 archive to the target directory.
+     * Strips the top-level directory from the archive (e.g., kokoro-en-v0_19/model.onnx → model.onnx).
+     */
+    private fun extractTarBz2(archiveFile: File, targetDir: File): Boolean {
+        return try {
+            targetDir.mkdirs()
+            val fis = FileInputStream(archiveFile)
+            val bis = BufferedInputStream(fis)
+            val bzis = BZip2CompressorInputStream(bis)
+            val tar = TarArchiveInputStream(bzis)
+
+            var entry = tar.nextEntry
+            // Detect top-level directory name for stripping
+            val topLevelDir = entry?.name?.split("/")?.firstOrNull() ?: ""
+
+            while (entry != null) {
+                // Strip top-level directory from path
+                var entryName = entry.name
+                if (topLevelDir.isNotEmpty() && entryName.startsWith("$topLevelDir/")) {
+                    entryName = entryName.removePrefix("$topLevelDir/")
+                }
+
+                if (entryName.isBlank()) {
+                    entry = tar.nextEntry
+                    continue
+                }
+
+                val outFile = File(targetDir, entryName)
+                if (entry.isDirectory) {
+                    outFile.mkdirs()
+                } else {
+                    outFile.parentFile?.mkdirs()
+                    FileOutputStream(outFile).use { fos ->
+                        tar.copyTo(fos)
+                    }
+                }
+                entry = tar.nextEntry
+            }
+
+            tar.close()
+            Log.i(TAG, "Extracted ${archiveFile.name} → ${targetDir.absolutePath}")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to extract tar.bz2", e)
+            DebugLog.tts("Extract failed: ${e.message}")
+            false
+        }
+    }
+
+    /**
+     * If the extracted TTS model contains espeak-ng-data, copy it to the shared location.
+     * sherpa-onnx needs this for phoneme processing.
+     */
+    private fun copyEspeakDataIfPresent(modelDir: File) {
+        val espeakDir = modelDir.listFiles()?.find { it.isDirectory && it.name == "espeak-ng-data" }
+            ?: return
+
+        val sharedEspeakDir = File(filesDir, "espeak-ng-data")
+        if (sharedEspeakDir.exists() && sharedEspeakDir.listFiles()?.isNotEmpty() == true) {
+            Log.d(TAG, "espeak-ng-data already exists at shared location")
+            return
+        }
+
+        try {
+            espeakDir.copyRecursively(sharedEspeakDir, overwrite = true)
+            Log.i(TAG, "Copied espeak-ng-data to ${sharedEspeakDir.absolutePath}")
+            DebugLog.tts("espeak-ng-data installed")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to copy espeak-ng-data", e)
+        }
     }
 
     private fun cancelCurrentDownload() {

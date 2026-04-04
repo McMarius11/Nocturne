@@ -413,19 +413,9 @@ Keep your responses natural and not too long."""
             ttsEngine.setTtsModel(model.id)
             viewModelScope.launch { settingsStore.setTtsModelId(model.id) }
         } else {
-            // Download TTS model via DownloadService
-            val modelInfo = ModelInfo(
-                id = model.id,
-                displayName = model.displayName,
-                fileName = model.fileName,
-                downloadUrl = model.downloadUrl,
-                sizeGb = model.sizeBytes / 1_000_000_000f,
-                sizeBytes = model.sizeBytes,
-                batteryPerHour = 0,
-                description = model.description
-            )
-            llmEngine.getModelManager().startDownload(modelInfo)
-            DebugLog.tts("Started download: ${model.displayName}")
+            // Download TTS model via DownloadService (tar.bz2 archive)
+            DownloadService.startTtsDownload(getApplication(), model)
+            DebugLog.tts("Started TTS download: ${model.displayName}")
         }
     }
 

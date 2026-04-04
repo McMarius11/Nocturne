@@ -107,6 +107,9 @@ dependencies {
     // OkHttp for model downloads
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
+    // Archive extraction for TTS model tar.bz2 files
+    implementation("org.apache.commons:commons-compress:1.27.1")
+
     // DataStore
     implementation("androidx.datastore:datastore-preferences:1.1.1")
 

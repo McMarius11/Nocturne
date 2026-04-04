@@ -110,6 +110,11 @@ fun ChatScreen(
     var showMenu by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
+    // Show onboarding on first launch (no models downloaded, no messages)
+    var showOnboarding by remember {
+        mutableStateOf(downloadedModels.isEmpty() && messages.isEmpty())
+    }
+
     val listState = rememberLazyListState()
     val isDownloading = downloadState is ModelManager.DownloadState.Downloading
 
@@ -551,6 +556,17 @@ fun ChatScreen(
                 }
             },
             containerColor = NexusCard
+        )
+    }
+
+    // Onboarding overlay (first launch only)
+    if (showOnboarding) {
+        com.nexus.companion.ui.components.OnboardingOverlay(
+            onDismiss = { showOnboarding = false },
+            onDownloadModel = {
+                showOnboarding = false
+                showModelSwitcher = true
+            }
         )
     }
 }
