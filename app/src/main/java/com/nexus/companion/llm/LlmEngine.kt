@@ -180,7 +180,9 @@ class LlmEngine(private val context: Context) {
 
     /**
      * Gemma 3/4 prompt format.
-     * Uses <start_of_turn>/<end_of_turn> with system, user, model roles.
+     * Uses <bos> + <start_of_turn>/<end_of_turn> with system, user, model roles.
+     * <bos> is required — without it, Gemma produces empty/garbage output.
+     * The JNI tokenizer has parse_special=true, so <bos> is parsed as special token ID 2.
      */
     private fun buildGemmaPrompt(
         systemPrompt: String,
@@ -190,7 +192,7 @@ class LlmEngine(private val context: Context) {
     ): String {
         val sb = StringBuilder()
         val system = buildSystemBlock(systemPrompt, memoryContext)
-        sb.append("<start_of_turn>system\n$system<end_of_turn>\n")
+        sb.append("<bos><start_of_turn>system\n$system<end_of_turn>\n")
         for ((user, assistant) in history.takeLast(10)) {
             sb.append("<start_of_turn>user\n$user<end_of_turn>\n")
             sb.append("<start_of_turn>model\n$assistant<end_of_turn>\n")
