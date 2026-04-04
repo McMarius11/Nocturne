@@ -114,8 +114,8 @@ fun ChatScreen(
     // Unified canSend flag to prevent race conditions
     val canSend = inputText.isNotBlank() && !isGenerating && !isLoadingModel
 
-    // Auto-scroll to bottom on new messages or streaming updates
-    LaunchedEffect(messages.size, isGenerating, streamingText) {
+    // Auto-scroll on new messages or generation start/stop (not every token)
+    LaunchedEffect(messages.size, isGenerating) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(
                 messages.size - 1 + if (isGenerating) 1 else 0

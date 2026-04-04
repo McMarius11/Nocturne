@@ -133,6 +133,11 @@ Java_com_nexus_companion_llm_LlamaJni_loadModel(
     }
 
     const char *path = env->GetStringUTFChars(modelPath, nullptr);
+    if (!path) {
+        g_last_error = "Failed to get model path string (OOM?)";
+        LOGE("%s", g_last_error.c_str());
+        return JNI_FALSE;
+    }
     LOGI("Loading model: %s (ctx=%d, threads=%d)", path, contextLength, nThreads);
 
     // Check file accessible
@@ -217,6 +222,10 @@ Java_com_nexus_companion_llm_LlamaJni_generate(
     }
 
     const char *promptStr = env->GetStringUTFChars(prompt, nullptr);
+    if (!promptStr) {
+        g_last_error = "Failed to get prompt string (OOM?)";
+        return env->NewStringUTF("[Error: OOM getting prompt]");
+    }
     std::string promptCpp(promptStr);
     env->ReleaseStringUTFChars(prompt, promptStr);
 

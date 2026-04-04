@@ -320,7 +320,10 @@ Keep your responses natural and not too long."""
                         if (summary.isNotBlank() && !summary.startsWith("[Error:")) {
                             memoryExtractor.storeSummary(summary)
                         }
-                    } catch (_: Exception) {}
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Summarization failed", e)
+                        DebugLog.llm("Summarization error: ${e.message}")
+                    }
                 }
             } else if (cleanResponse.startsWith("[Error:")) {
                 showError("Generierung fehlgeschlagen. Debug Log prüfen.")
@@ -355,11 +358,12 @@ Keep your responses natural and not too long."""
         clearError()
         try {
             val success = llmEngine.loadModel(model)
-            if (success) {
+            if (success && llmEngine.isReady()) {
                 _currentModelId.value = model.id
                 _isModelLoaded.value = true
                 settingsStore.setSelectedModelId(model.id)
                 resetIdleTimer()
+                DebugLog.llm("Model ready: ${model.displayName}")
             } else {
                 showError("Modell konnte nicht geladen werden. Prüfe Debug Log.")
             }

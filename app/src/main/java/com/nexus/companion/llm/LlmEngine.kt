@@ -2,7 +2,9 @@ package com.nexus.companion.llm
 
 import android.content.Context
 import android.util.Log
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.first
@@ -26,6 +28,9 @@ class LlmEngine(private val context: Context) {
 
     private val jni = LlamaJni()
     private val modelManager = ModelManager(context)
+
+    /** Dedicated scope for engine operations (survives ViewModel lifecycle) */
+    private val engineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private var currentModel: ModelInfo? = null
 
@@ -138,7 +143,7 @@ class LlmEngine(private val context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "Error during generation", e)
             DebugLog.llm("Generation exception: ${e.message}")
-            throw e
+            "[Error: ${e.message ?: "Unknown"}]"
         }
     }
 
@@ -229,7 +234,8 @@ class LlmEngine(private val context: Context) {
         DebugLog.llm("Unloading model (abort + free)")
         jni.abort()
         currentModel = null
-        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+        // Use engine scope (not GlobalScope) — must complete even if ViewModel is cleared
+        engineScope.launch {
             try {
                 jni.unloadModel()
             } catch (e: Exception) {
