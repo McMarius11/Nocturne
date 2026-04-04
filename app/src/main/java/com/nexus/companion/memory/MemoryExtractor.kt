@@ -246,10 +246,16 @@ Conversation:"""
     // ===== Internal =====
 
     private suspend fun extractFromText(text: String, source: String, skipEmotions: Boolean = false) {
+        // Limit input length to prevent ReDoS on very long messages
+        val safeText = if (text.length > 2000) text.take(2000) else text
+        val matchedKeys = mutableSetOf<String>()
+
         for (pattern in allPatterns) {
             if (skipEmotions && pattern.category == "emotion") continue
+            // Skip if we already matched this key (avoid duplicate extractions)
+            if (pattern.key in matchedKeys) continue
 
-            val match = pattern.regex.find(text) ?: continue
+            val match = pattern.regex.find(safeText) ?: continue
 
             // For patterns with $1 in key (e.g. favorite_$1), use the LAST group as value
             val value = if (pattern.key.contains("\$1") && match.groupValues.size > 2) {
@@ -269,6 +275,7 @@ Conversation:"""
             }
 
             storeMemory(key, value, pattern.category, pattern.isList, source)
+            matchedKeys.add(pattern.key)
         }
     }
 

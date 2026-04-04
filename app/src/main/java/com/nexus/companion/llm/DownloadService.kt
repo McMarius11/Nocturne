@@ -164,12 +164,19 @@ class DownloadService : Service() {
             return true
         }
 
+        // Check network connectivity
+        val cm = getSystemService(android.net.ConnectivityManager::class.java)
+        if (cm?.activeNetwork == null) {
+            setProgress(ModelManager.DownloadState.Error("Keine Internetverbindung"))
+            updateNotification("Keine Internetverbindung", 0)
+            return false
+        }
+
         val tempFile = File(modelsDir, "${model.fileName}.tmp")
         tempFile.delete()
 
         var lastError: String? = null
         for (attempt in 1..3) {
-            var shouldRetry = false
             try {
                 setProgress(ModelManager.DownloadState.Downloading(model.id, 0f))
                 updateNotification("${model.displayName} wird heruntergeladen...", 0)
@@ -186,99 +193,90 @@ class DownloadService : Service() {
                 if (!response.isSuccessful) {
                     lastError = "HTTP ${response.code}: ${response.message}"
                     response.close()
-                    if (attempt < 3) {
-                        delay(attempt * 2000L)
-                        shouldRetry = true
-                    } else {
+
+                    // Don't retry client errors (404, 403, etc.) — only retry server/network errors
+                    if (response.code in 400..499 && response.code != 408 && response.code != 429) {
                         setProgress(ModelManager.DownloadState.Error("Download fehlgeschlagen: $lastError"))
                         updateNotification("Download fehlgeschlagen", 0)
                         return false
                     }
+                    if (attempt < 3) {
+                        delay(attempt * 2000L)
+                        continue
+                    }
+                    setProgress(ModelManager.DownloadState.Error("Download fehlgeschlagen: $lastError"))
+                    updateNotification("Download fehlgeschlagen", 0)
+                    return false
                 }
 
-                if (shouldRetry) { /* next attempt */ }
-                else {
-                    val body = response.body
-                    if (body == null) {
-                        lastError = "Leere Antwort vom Server"
-                        if (attempt < 3) {
-                            delay(attempt * 2000L)
-                            shouldRetry = true
-                        } else {
-                            setProgress(ModelManager.DownloadState.Error(lastError!!))
-                            updateNotification("Download fehlgeschlagen", 0)
-                            return false
-                        }
-                    }
+                val body = response.body
+                if (body == null) {
+                    lastError = "Leere Antwort vom Server"
+                    if (attempt < 3) { delay(attempt * 2000L); continue }
+                    setProgress(ModelManager.DownloadState.Error(lastError!!))
+                    return false
+                }
 
-                    if (!shouldRetry) {
-                        val totalBytes = body!!.contentLength()
-                        var downloadedBytes = 0L
-                        var lastNotificationUpdate = 0L
+                val totalBytes = body.contentLength()
+                var downloadedBytes = 0L
+                var lastNotificationUpdate = 0L
 
-                        body.byteStream().use { input ->
-                            FileOutputStream(tempFile).use { output ->
-                                val buffer = ByteArray(32768)
-                                var bytesRead: Int
-                                while (input.read(buffer).also { bytesRead = it } != -1) {
-                                    output.write(buffer, 0, bytesRead)
-                                    downloadedBytes += bytesRead
-                                    if (totalBytes > 0) {
-                                        val progress = downloadedBytes.toFloat() / totalBytes
-                                        setProgress(ModelManager.DownloadState.Downloading(
-                                            model.id, progress
-                                        ))
-                                        // Throttle notification updates to every 500ms
-                                        val now = System.currentTimeMillis()
-                                        if (now - lastNotificationUpdate > 500) {
-                                            lastNotificationUpdate = now
-                                            val percent = (progress * 100).toInt()
-                                            val downloadedMb = downloadedBytes / 1_000_000
-                                            val totalMb = totalBytes / 1_000_000
-                                            updateNotification(
-                                                "${model.displayName}: ${downloadedMb}/${totalMb} MB",
-                                                percent
-                                            )
-                                        }
-                                    }
+                body.byteStream().use { input ->
+                    FileOutputStream(tempFile).use { output ->
+                        val buffer = ByteArray(32768)
+                        var bytesRead: Int
+                        while (input.read(buffer).also { bytesRead = it } != -1) {
+                            output.write(buffer, 0, bytesRead)
+                            downloadedBytes += bytesRead
+                            if (totalBytes > 0) {
+                                val progress = downloadedBytes.toFloat() / totalBytes
+                                setProgress(ModelManager.DownloadState.Downloading(model.id, progress))
+                                val now = System.currentTimeMillis()
+                                if (now - lastNotificationUpdate > 500) {
+                                    lastNotificationUpdate = now
+                                    val percent = (progress * 100).toInt()
+                                    val downloadedMb = downloadedBytes / 1_000_000
+                                    val totalMb = totalBytes / 1_000_000
+                                    updateNotification(
+                                        "${model.displayName}: ${downloadedMb}/${totalMb} MB",
+                                        percent
+                                    )
                                 }
                             }
                         }
-
-                        // Verify size
-                        if (totalBytes > 0 && tempFile.length() < totalBytes * 0.99) {
-                            tempFile.delete()
-                            lastError = "Download unvollständig (${tempFile.length()}/$totalBytes Bytes)"
-                            if (attempt < 3) {
-                                delay(attempt * 2000L)
-                                shouldRetry = true
-                            } else {
-                                setProgress(ModelManager.DownloadState.Error(lastError!!))
-                                updateNotification("Download unvollständig", 0)
-                                return false
-                            }
-                        }
-
-                        if (!shouldRetry) {
-                            // Atomic rename
-                            targetFile.delete()
-                            val renamed = tempFile.renameTo(targetFile)
-                            if (!renamed) {
-                                tempFile.delete()
-                                setProgress(ModelManager.DownloadState.Error("Datei konnte nicht gespeichert werden"))
-                                return false
-                            }
-                            return true
-                        }
                     }
                 }
 
+                // Verify download completeness
+                if (totalBytes > 0 && tempFile.length() < totalBytes * 0.99) {
+                    tempFile.delete()
+                    lastError = "Download unvollständig (${tempFile.length()}/$totalBytes Bytes)"
+                    if (attempt < 3) { delay(attempt * 2000L); continue }
+                    setProgress(ModelManager.DownloadState.Error(lastError!!))
+                    updateNotification("Download unvollständig", 0)
+                    return false
+                }
+
+                // Atomic rename
+                targetFile.delete()
+                val renamed = tempFile.renameTo(targetFile)
+                if (!renamed) {
+                    tempFile.delete()
+                    setProgress(ModelManager.DownloadState.Error("Datei konnte nicht gespeichert werden"))
+                    return false
+                }
+                return true
+
+            } catch (e: java.io.IOException) {
+                tempFile.delete()
+                lastError = "Netzwerkfehler: ${e.message}"
+                Log.w(TAG, "Download attempt $attempt failed (IO)", e)
+                if (attempt < 3) { delay(attempt * 2000L) }
             } catch (e: Exception) {
                 tempFile.delete()
                 lastError = e.message ?: "Unbekannter Fehler"
-                if (attempt < 3) {
-                    delay(attempt * 2000L)
-                }
+                Log.w(TAG, "Download attempt $attempt failed", e)
+                if (attempt < 3) { delay(attempt * 2000L) }
             }
         }
 

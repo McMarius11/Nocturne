@@ -1,4 +1,80 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Nexus</string>
+
+    <!-- Chat Screen -->
+    <string name="no_model">Kein Modell</string>
+    <string name="model_loading">Wird geladen…</string>
+    <string name="model_off">%s (aus)</string>
+    <string name="llm_on">LLM einschalten</string>
+    <string name="llm_off">LLM ausschalten</string>
+    <string name="delete_chat">Chat löschen</string>
+    <string name="debug_log">Debug Log</string>
+    <string name="downloading_model">Modell wird heruntergeladen…</string>
+    <string name="llm_loading">LLM wird geladen…</string>
+    <string name="message_hint">Nachricht…</string>
+    <string name="send">Senden</string>
+
+    <!-- Welcome Screen -->
+    <string name="welcome_title">Nexus</string>
+    <string name="welcome_no_model">Willkommen! Um mit Nexus zu chatten,\nlade zuerst ein KI-Modell herunter.</string>
+    <string name="welcome_download">Modell herunterladen</string>
+    <string name="welcome_recommendation">Empfohlen: Gemma 4 E4B (5 GB)\noder Qwen3 4B (2.7 GB)</string>
+    <string name="welcome_model_off">Modell ist ausgeschaltet.</string>
+    <string name="welcome_loading">Modell wird geladen…</string>
+    <string name="welcome_ready">Schreib mir etwas…</string>
+
+    <!-- Delete Dialog -->
+    <string name="delete_title">Chat löschen?</string>
+    <string name="delete_message">Der gesamte Chatverlauf wird unwiderruflich gelöscht.</string>
+    <string name="delete_confirm">Löschen</string>
+    <string name="cancel">Abbrechen</string>
+
+    <!-- Model Switcher -->
+    <string name="model_switcher_title">LLM Model</string>
+    <string name="storage_info">Speicher: %1$.1f GB frei  •  RAM: %2$.1f / %3$.0f GB</string>
+    <string name="download_title">%s herunterladen?</string>
+    <string name="download_info">Download: %1$.1f GB\nSpeicher frei: %2$.1f GB</string>
+    <string name="download_confirm">Herunterladen</string>
+    <string name="ram_warning">RAM-Warnung: Dieses Modell braucht ~%1$.0f GB RAM. Dein Gerät hat %2$.0f GB (%3$.1f GB frei). Es könnte langsam werden oder abstürzen.</string>
+    <string name="storage_warning">Nicht genug Speicherplatz!</string>
+    <string name="delete_model_title">%s löschen?</string>
+    <string name="delete_model_message">%s GB Speicher werden freigegeben.</string>
+
+    <!-- Error Messages -->
+    <string name="error_no_model">Kein Modell geladen. Tippe auf 🧠 um ein Modell herunterzuladen.</string>
+    <string name="error_model_reloading">Modell wird neu geladen…</string>
+    <string name="error_model_load_failed">Modell konnte nicht geladen werden.</string>
+    <string name="error_model_unavailable">Modell nicht verfügbar. Bitte lade es erneut herunter.</string>
+    <string name="error_no_model_selected">Kein Modell ausgewählt. Bitte wähle zuerst ein Modell.</string>
+    <string name="error_generation_failed">Generierung fehlgeschlagen. Debug Log prüfen.</string>
+    <string name="error_empty_response">Leere Antwort. Versuche es nochmal oder wechsle das Modell.</string>
+    <string name="error_idle_unload">LLM wurde nach 10 Min Inaktivität entladen. Tippe auf Senden zum Neuladen.</string>
+    <string name="error_no_model_phone">Kein Modell geladen. Bitte lade zuerst ein Modell.</string>
+    <string name="error_load_failed_debug">Modell konnte nicht geladen werden. Prüfe Debug Log.</string>
+    <string name="error_no_network">Keine Internetverbindung</string>
+
+    <!-- Download Service -->
+    <string name="download_channel_name">Modell-Downloads</string>
+    <string name="download_channel_desc">Zeigt den Fortschritt beim Herunterladen von KI-Modellen</string>
+    <string name="download_preparing">Vorbereitung…</string>
+    <string name="download_failed">Download fehlgeschlagen</string>
+    <string name="download_incomplete">Download unvollständig</string>
+    <string name="download_cancel">Abbrechen</string>
+
+    <!-- Debug Log -->
+    <string name="debug_empty">Keine Log-Einträge.\nSende eine Nachricht um Logs zu sehen.</string>
+    <string name="debug_tips">Tipps zum Troubleshooting:\n• Prüfe ob ein Modell geladen ist (oben)\n• Sende eine Testnachricht wie \"Hallo\"\n• Schaue hier nach Fehlern (rot markiert)\n• Prüfe die Token-IDs und Prompt-Preview</string>
+
+    <!-- Voice Switcher -->
+    <string name="voice_language">Sprache / Language</string>
+    <string name="voice_tts_model">Stimme / TTS Model</string>
+    <string name="voice_tts_hint">Neural-Stimme herunterladen für natürlichere Sprache</string>
+    <string name="voice_experimental">Experimentell (coming soon)</string>
+
+    <!-- Phone Mode -->
+    <string name="phone_active">Sprachmodus aktiv</string>
+    <string name="phone_thinking">Nexus denkt nach…</string>
+    <string name="phone_speaking">Nexus spricht…</string>
+    <string name="phone_error">Entschuldigung, da ist etwas schiefgelaufen.</string>
 </resources>

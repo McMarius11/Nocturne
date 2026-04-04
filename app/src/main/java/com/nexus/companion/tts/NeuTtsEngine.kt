@@ -33,6 +33,10 @@ class NeuTtsEngine(private val context: Context) {
 
     private var currentProfile: VoiceProfile = VoiceProfile.ANDROID_DE
 
+    /** Shared latch for TTS completion — reset on each speak() call */
+    @Volatile
+    private var completionLatch: java.util.concurrent.CountDownLatch? = null
+
     private val modelsDir: File
         get() = File(context.filesDir, "models")
 
@@ -41,13 +45,18 @@ class NeuTtsEngine(private val context: Context) {
         fallbackTts = android.speech.tts.TextToSpeech(context) { status ->
             if (status == android.speech.tts.TextToSpeech.SUCCESS) {
                 fallbackTts?.language = currentProfile.ttsLocale
-                // Use VOICE_COMMUNICATION stream so speaker toggle works
                 fallbackTts?.setAudioAttributes(
                     android.media.AudioAttributes.Builder()
                         .setUsage(android.media.AudioAttributes.USAGE_VOICE_COMMUNICATION)
                         .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
                         .build()
                 )
+                // Set listener ONCE (reuses completionLatch field)
+                fallbackTts?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+                    override fun onStart(id: String?) {}
+                    override fun onDone(id: String?) { completionLatch?.countDown() }
+                    @Deprecated("Deprecated") override fun onError(id: String?) { completionLatch?.countDown() }
+                })
                 fallbackReady = true
                 Log.d(TAG, "Android TTS ready")
             }
@@ -160,13 +169,7 @@ class NeuTtsEngine(private val context: Context) {
         // Fallback to Android System TTS — wait for completion
         if (fallbackReady) {
             val utteranceId = "nexus_tts_${System.currentTimeMillis()}"
-            val completionLatch = java.util.concurrent.CountDownLatch(1)
-
-            fallbackTts?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
-                override fun onStart(id: String?) {}
-                override fun onDone(id: String?) { completionLatch.countDown() }
-                @Deprecated("Deprecated") override fun onError(id: String?) { completionLatch.countDown() }
-            })
+            completionLatch = java.util.concurrent.CountDownLatch(1)
 
             fallbackTts?.speak(
                 text,
@@ -176,7 +179,7 @@ class NeuTtsEngine(private val context: Context) {
             )
 
             // Wait for TTS to finish (max 30 seconds to prevent infinite block)
-            completionLatch.await(30, java.util.concurrent.TimeUnit.SECONDS)
+            completionLatch?.await(30, java.util.concurrent.TimeUnit.SECONDS)
         }
     }
 
