@@ -15,8 +15,10 @@ set(LLAMA_CURL OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
 # ARM optimizations for Tensor G4 / Snapdragon
+# NOTE: OpenMP MUST be OFF on Android — causes deadlocks in llama_decode.
+# llama.cpp uses its own thread pool (std::thread) which works fine.
+set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
 set(GGML_CPU_KLEIDIAI ON CACHE BOOL "" FORCE)
-set(GGML_OPENMP ON CACHE BOOL "" FORCE)
 
 # Build llama.cpp using its own CMake build system
 # This is robust against internal restructuring of llama.cpp
