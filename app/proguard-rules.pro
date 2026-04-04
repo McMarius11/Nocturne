@@ -5,8 +5,13 @@
 # sherpa-onnx TTS JNI classes
 -keep class com.k2fsa.sherpa.onnx.** { *; }
 
-# Apache Commons Compress (used for tar.bz2 extraction)
--keep class org.apache.commons.compress.** { *; }
+# Apache Commons Compress — keep bzip2/tar classes, ignore missing optional deps
+-keep class org.apache.commons.compress.archivers.tar.** { *; }
+-keep class org.apache.commons.compress.compressors.bzip2.** { *; }
+-dontwarn org.tukaani.xz.**
+-dontwarn com.github.luben.zstd.**
+-dontwarn org.brotli.dec.**
+-dontwarn org.objectweb.asm.**
 
 # Room database classes
 -keep class com.nexus.companion.data.MessageEntity { *; }
