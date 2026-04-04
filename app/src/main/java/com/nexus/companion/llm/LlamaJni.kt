@@ -13,6 +13,9 @@ class LlamaJni {
         fun onProgress(message: String)
     }
 
+    /** Load CPU backend variants from native lib dir. Must be called once before loadModel(). */
+    external fun loadBackends(nativeLibDir: String)
+
     external fun loadModel(modelPath: String, nThreads: Int, contextLength: Int): Boolean
     external fun generate(prompt: String, maxTokens: Int): String
     external fun generateStreaming(prompt: String, maxTokens: Int, callback: TokenCallback): String

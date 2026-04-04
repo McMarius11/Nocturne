@@ -35,9 +35,8 @@ android {
 
         externalNativeBuild {
             cmake {
-                arguments("-DANDROID_STL=c++_shared", "-DANDROID_ARM_NEON=ON")
+                arguments("-DANDROID_STL=c++_shared")
                 cppFlags("-std=c++17")
-                // ARM arch flags are set globally in llama-jni/CMakeLists.txt via CMAKE_C/CXX_FLAGS
             }
         }
     }

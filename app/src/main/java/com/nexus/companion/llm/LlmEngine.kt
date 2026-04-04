@@ -28,6 +28,8 @@ class LlmEngine(private val context: Context) {
 
     private val jni = LlamaJni()
     private val modelManager = ModelManager(context)
+    @Volatile
+    private var backendsLoaded = false
 
     /** Dedicated scope for engine operations (survives ViewModel lifecycle) */
     private val engineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -75,6 +77,14 @@ class LlmEngine(private val context: Context) {
             val contextLength = model.contextLength
             DebugLog.llm("Loading ${model.displayName} (${fileSize} MB, ctx=$contextLength, format=${model.promptFormat})")
             DebugLog.llm("Path: $path")
+            // Load dynamic CPU backend variants (once)
+            if (!backendsLoaded) {
+                val nativeLibDir = context.applicationInfo.nativeLibraryDir
+                DebugLog.llm("Loading backends from: $nativeLibDir")
+                jni.loadBackends(nativeLibDir)
+                backendsLoaded = true
+            }
+
             val loadStart = System.currentTimeMillis()
             val success = jni.loadModel(
                 modelPath = path,

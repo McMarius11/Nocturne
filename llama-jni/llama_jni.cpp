@@ -142,6 +142,29 @@ static int decode_in_batches(const std::vector<llama_token> &tokens, llama_pos s
 
 extern "C" {
 
+/**
+ * Load all CPU backend variants from the app's native library directory.
+ * Must be called once before loadModel() when using GGML_BACKEND_DL.
+ */
+JNIEXPORT void JNICALL
+Java_com_nexus_companion_llm_LlamaJni_loadBackends(
+    JNIEnv *env, jobject,
+    jstring nativeLibDir
+) {
+    const char *path = env->GetStringUTFChars(nativeLibDir, nullptr);
+    if (!path) {
+        LOGE("Failed to get native lib dir string");
+        return;
+    }
+    LOGI("Loading backends from: %s", path);
+    ggml_backend_load_all_from_path(path);
+    env->ReleaseStringUTFChars(nativeLibDir, path);
+
+    size_t n_reg = ggml_backend_reg_count();
+    size_t n_dev = ggml_backend_dev_count();
+    LOGI("Loaded %zu backend registrations, %zu devices", n_reg, n_dev);
+}
+
 JNIEXPORT jboolean JNICALL
 Java_com_nexus_companion_llm_LlamaJni_loadModel(
     JNIEnv *env, jobject,
@@ -162,6 +185,8 @@ Java_com_nexus_companion_llm_LlamaJni_loadModel(
 
     // Initialize backend (only once)
     if (!g_backend_initialized) {
+        // With GGML_BACKEND_DL=ON, backends are loaded as dynamic .so files
+        // We need to load them from the app's native lib directory
         llama_backend_init();
         g_backend_initialized = true;
         LOGI("Backend initialized");

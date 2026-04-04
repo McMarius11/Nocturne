@@ -6,45 +6,43 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(LLAMA_CPP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../external/llama.cpp")
 
-# ===== ARM SIMD: Global compiler flags for ALL targets =====
-# CRITICAL: Setting GGML_CPU_ARM_ARCH alone doesn't reliably propagate through
-# cmake subdirectory scopes. The ONLY guaranteed way to ensure dotprod/i8mm/sve
-# are used in ALL ggml compilation units is to set global CMAKE_C/CXX_FLAGS.
-# Target: Pixel 9 Pro Tensor G4 (Cortex-X4/A720, ARMv8.6+dotprod+i8mm+sve)
-if(DEFINED ANDROID_ABI AND ANDROID_ABI STREQUAL "arm64-v8a")
-    set(ARM_ARCH_FLAGS "-march=armv8.6-a+dotprod+i8mm+fp16+sve")
-    set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} ${ARM_ARCH_FLAGS}"   CACHE STRING "" FORCE)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${ARM_ARCH_FLAGS}" CACHE STRING "" FORCE)
-    set(GGML_SYSTEM_ARCH "ARM")
-    message(STATUS "Android arm64-v8a: Applied ${ARM_ARCH_FLAGS} globally")
-    message(STATUS "CMAKE_C_FLAGS: ${CMAKE_C_FLAGS}")
+# ===== Android ABI detection (from official llama.cpp Android example) =====
+if(DEFINED ANDROID_ABI)
+    message(STATUS "Android ABI detected: ${ANDROID_ABI}")
+    if(ANDROID_ABI STREQUAL "arm64-v8a")
+        set(GGML_SYSTEM_ARCH "ARM")
+        set(GGML_CPU_KLEIDIAI ON)
+    elseif(ANDROID_ABI STREQUAL "x86_64")
+        set(GGML_SYSTEM_ARCH "x86")
+        set(GGML_CPU_KLEIDIAI OFF)
+    endif()
 endif()
 
-# Disable unnecessary llama.cpp build targets
+# ===== Build configuration (matching official Android example) =====
+set(BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_SERVER OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_COMMON ON CACHE BOOL "" FORCE)
 set(LLAMA_CURL OFF CACHE BOOL "" FORCE)
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-set(GGML_LTO ON CACHE BOOL "" FORCE)
 
 # Threading: OpenMP OFF — deadlocks on Android NDK c++_shared STL
 set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
 
-# Also set GGML_CPU_ARM_ARCH for ggml's own ARM feature detection
-set(GGML_CPU_ARM_ARCH "armv8.6-a+dotprod+i8mm+fp16+sve" CACHE STRING "" FORCE)
+# ===== CPU Backend: Multi-variant with runtime detection =====
+# This builds 7 different CPU backends with different ARM feature sets:
+#   armv8.0 (baseline), armv8.2+dotprod, armv8.2+dotprod+fp16,
+#   armv8.6+dotprod+fp16+i8mm, armv9.0+SVE2, armv9.2+SME, etc.
+# At runtime, llama.cpp automatically picks the best variant for the device.
+# This is the CORRECT approach for Android (not hardcoded -march flags).
+set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
+set(GGML_BACKEND_DL ON CACHE BOOL "" FORCE)
+set(GGML_CPU_ALL_VARIANTS ON CACHE BOOL "" FORCE)
 
-# KleidiAI: optimized matmul kernels for ARM (20-30% speedup)
-set(GGML_CPU_KLEIDIAI ON CACHE BOOL "" FORCE)
+# LLAMAFILE OFF (official example disables it with ALL_VARIANTS)
+set(GGML_LLAMAFILE OFF CACHE BOOL "" FORCE)
 
-# Runtime weight repacking (Q4_0 → optimized layout for KleidiAI)
-set(GGML_CPU_REPACK ON CACHE BOOL "" FORCE)
-
-# LLAMAFILE: optimized sgemm kernels
-set(GGML_LLAMAFILE ON CACHE BOOL "" FORCE)
-
-# Build llama.cpp using its own CMake build system
+# Build llama.cpp
 add_subdirectory(${LLAMA_CPP_DIR} ${CMAKE_CURRENT_BINARY_DIR}/llama.cpp)
 
 # JNI bridge shared library
@@ -57,5 +55,4 @@ target_include_directories(nexus-llama PRIVATE
 )
 
 target_link_libraries(nexus-llama PRIVATE llama common android log)
-target_compile_options(nexus-llama PRIVATE -O3 -flto -ffast-math)
-target_link_options(nexus-llama PRIVATE -flto)
+target_compile_options(nexus-llama PRIVATE -O3)
