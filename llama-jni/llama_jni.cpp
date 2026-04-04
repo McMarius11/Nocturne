@@ -194,7 +194,12 @@ Java_com_nexus_companion_llm_LlamaJni_loadModel(
 
     // Create context
     g_n_ctx = contextLength;
-    int threads = std::max(2, std::min((int)nThreads, (int)sysconf(_SC_NPROCESSORS_ONLN) - 2));
+    int n_cpus = (int)sysconf(_SC_NPROCESSORS_ONLN);
+    // Use up to nThreads but leave 2 cores for Android system + UI.
+    // On Pixel 9 Pro (1xX4 + 3xA720 + 4xA520 = 8 cores), 4 threads
+    // uses the big cores for inference while leaving LITTLE cores free.
+    int threads = std::max(1, std::min((int)nThreads, n_cpus - 2));
+    LOGI("CPU cores: %d, using %d threads for inference", n_cpus, threads);
 
     auto ctx_params = llama_context_default_params();
     ctx_params.n_ctx = g_n_ctx;
@@ -202,6 +207,9 @@ Java_com_nexus_companion_llm_LlamaJni_loadModel(
     ctx_params.n_ubatch = BATCH_SIZE;
     ctx_params.n_threads = threads;
     ctx_params.n_threads_batch = threads;
+    ctx_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
+
+    LOGI("Context params: ctx=%d batch=%d threads=%d flash_attn=enabled", g_n_ctx, BATCH_SIZE, threads);
 
     g_context = llama_init_from_model(g_model, ctx_params);
     if (!g_context) {
@@ -709,6 +717,7 @@ Java_com_nexus_companion_llm_LlamaJni_setThreadCount(JNIEnv *env, jobject, jint 
     ctx_params.n_ubatch = BATCH_SIZE;
     ctx_params.n_threads = threads;
     ctx_params.n_threads_batch = threads;
+    ctx_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
 
     g_context = llama_init_from_model(g_model, ctx_params);
     if (!g_context) {

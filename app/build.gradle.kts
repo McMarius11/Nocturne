@@ -35,8 +35,10 @@ android {
 
         externalNativeBuild {
             cmake {
-                arguments("-DANDROID_STL=c++_shared")
-                cppFlags("-std=c++17")
+                arguments("-DANDROID_STL=c++_shared", "-DANDROID_ARM_NEON=ON")
+                // Tensor G4 (Pixel 9 Pro): ARMv9 with dotprod + i8mm for fast quantized matmul
+                cppFlags("-std=c++17 -march=armv8.6-a+dotprod+i8mm")
+                cFlags("-march=armv8.6-a+dotprod+i8mm")
             }
         }
     }

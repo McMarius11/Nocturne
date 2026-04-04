@@ -14,13 +14,13 @@ set(LLAMA_BUILD_COMMON ON CACHE BOOL "" FORCE)
 set(LLAMA_CURL OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
-# Android threading: OpenMP MUST be OFF — causes deadlocks in llama_decode.
-# llama.cpp uses its own thread pool (std::thread) which works fine on Android.
+# Android threading: OpenMP MUST be OFF — causes deadlocks in llama_decode
+# on Android NDK with c++_shared STL. llama.cpp's own thread pool works fine.
 set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
 
-# ARM optimizations: disabled for now to ensure stability.
-# Can re-enable individually once basic inference is confirmed working.
-set(GGML_CPU_KLEIDIAI OFF CACHE BOOL "" FORCE)
+# ARM optimizations for Tensor G4 (Pixel 9 Pro) — ARMv9, dotprod, i8mm
+# KleidiAI provides optimized matmul kernels for ARM (20-30% speedup)
+set(GGML_CPU_KLEIDIAI ON CACHE BOOL "" FORCE)
 
 # Build llama.cpp using its own CMake build system
 # This is robust against internal restructuring of llama.cpp
@@ -33,6 +33,7 @@ add_library(nexus-llama SHARED llama_jni.cpp)
 target_include_directories(nexus-llama PRIVATE
     ${LLAMA_CPP_DIR}/common
     ${LLAMA_CPP_DIR}/include
+    ${LLAMA_CPP_DIR}/ggml/include
 )
 
 # Link llama + common (for chat templates, sampling, tokenization)

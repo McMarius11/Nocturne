@@ -69,7 +69,7 @@ class LlmEngine(private val context: Context) {
             val loadStart = System.currentTimeMillis()
             val success = jni.loadModel(
                 modelPath = path,
-                nThreads = 2,
+                nThreads = 4,
                 contextLength = contextLength
             )
             val loadMs = System.currentTimeMillis() - loadStart
@@ -196,16 +196,21 @@ class LlmEngine(private val context: Context) {
             DebugLog.llm("Model state before generate: ${jni.getModelInfo()}")
             DebugLog.llm("Calling JNI generateStreaming...")
 
-            // Watchdog: log every 10s while JNI is running so we know it's alive vs hung
+            // Watchdog: log every 15s while JNI is running
+            // Prompt decode for 4B models on mobile CPU can take 2-4 minutes — be patient
             val watchdogJob = engineScope.launch {
-                var elapsed = 10
+                var elapsed = 0
                 while (true) {
-                    kotlinx.coroutines.delay(10_000)
-                    DebugLog.llm("Still generating... ${elapsed}s ($tokenCount tokens so far)")
-                    elapsed += 10
-                    // Hard timeout: abort after 60s with no tokens (prompt decode hung)
-                    if (elapsed >= 60 && tokenCount == 0) {
-                        DebugLog.llm("TIMEOUT: Aborting generation — no tokens after ${elapsed}s")
+                    kotlinx.coroutines.delay(15_000)
+                    elapsed += 15
+                    if (tokenCount == 0) {
+                        DebugLog.llm("Prompt decode in progress... ${elapsed}s (no tokens yet)")
+                    } else {
+                        DebugLog.llm("Generating... ${elapsed}s ($tokenCount tokens so far)")
+                    }
+                    // Hard timeout: abort after 5 minutes with no tokens
+                    if (elapsed >= 300 && tokenCount == 0) {
+                        DebugLog.llm("TIMEOUT: Aborting — no tokens after ${elapsed}s")
                         jni.abort()
                         break
                     }
