@@ -38,4 +38,5 @@ target_include_directories(nexus-llama PRIVATE
 
 # Link llama + common (for chat templates, sampling, tokenization)
 target_link_libraries(nexus-llama PRIVATE llama common android log)
-target_compile_options(nexus-llama PRIVATE -O3)
+target_compile_options(nexus-llama PRIVATE -O3 -flto -ffast-math)
+target_link_options(nexus-llama PRIVATE -flto)

@@ -207,9 +207,9 @@ Java_com_nexus_companion_llm_LlamaJni_loadModel(
     ctx_params.n_ubatch = BATCH_SIZE;
     ctx_params.n_threads = threads;
     ctx_params.n_threads_batch = threads;
-    ctx_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
+    ctx_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_AUTO;
 
-    LOGI("Context params: ctx=%d batch=%d threads=%d flash_attn=enabled", g_n_ctx, BATCH_SIZE, threads);
+    LOGI("Context params: ctx=%d batch=%d threads=%d flash_attn=auto", g_n_ctx, BATCH_SIZE, threads);
 
     g_context = llama_init_from_model(g_model, ctx_params);
     if (!g_context) {
@@ -345,6 +345,15 @@ Java_com_nexus_companion_llm_LlamaJni_generate(
 
         // Sample
         auto new_token = common_sampler_sample(g_sampler, g_context, -1);
+
+        // Validate token before accepting
+        int n_vocab = llama_vocab_n_tokens(vocab);
+        if (new_token < 0 || new_token >= n_vocab) {
+            LOGE("Invalid token %d (vocab size %d) at step %d", new_token, n_vocab, i);
+            g_last_error = "Sampler returned invalid token";
+            break;
+        }
+
         common_sampler_accept(g_sampler, new_token, true);
 
         if (tokens_generated == 0) {
@@ -409,10 +418,11 @@ Java_com_nexus_companion_llm_LlamaJni_generateStreaming(
         return env->NewStringUTF("[Error: Model not loaded]");
     }
 
-    // Get callback methods
+    // Get callback methods (delete local ref to class immediately — we only need the method IDs)
     jclass callbackClass = env->GetObjectClass(callback);
     jmethodID onTokenMethod = env->GetMethodID(callbackClass, "onToken", "(Ljava/lang/String;)V");
     jmethodID onProgressMethod = env->GetMethodID(callbackClass, "onProgress", "(Ljava/lang/String;)V");
+    env->DeleteLocalRef(callbackClass);
     if (!onTokenMethod || !onProgressMethod) {
         LOGE("Callback methods not found (onToken=%p, onProgress=%p)", onTokenMethod, onProgressMethod);
         return env->NewStringUTF("[Error: Invalid callback]");
@@ -494,6 +504,15 @@ Java_com_nexus_companion_llm_LlamaJni_generateStreaming(
         }
 
         auto new_token = common_sampler_sample(g_sampler, g_context, -1);
+
+        // Validate token before accepting
+        int n_vocab = llama_vocab_n_tokens(vocab);
+        if (new_token < 0 || new_token >= n_vocab) {
+            LOGE("Invalid token %d (vocab size %d) at step %d", new_token, n_vocab, i);
+            g_last_error = "Sampler returned invalid token";
+            break;
+        }
+
         common_sampler_accept(g_sampler, new_token, true);
 
         if (tokens_generated == 0) {
@@ -529,9 +548,16 @@ Java_com_nexus_companion_llm_LlamaJni_generateStreaming(
         g_current_pos++;
     }
 
-    if (!cached_chars.empty() && is_valid_utf8(cached_chars.c_str())) {
-        result += cached_chars;
-        jstring jPiece = env->NewStringUTF(cached_chars.c_str());
+    // Flush remaining cached chars
+    if (!cached_chars.empty()) {
+        if (is_valid_utf8(cached_chars.c_str())) {
+            result += cached_chars;
+        } else {
+            // Incomplete UTF-8 sequence at end — replace with U+FFFD
+            result += "\xEF\xBF\xBD";
+        }
+        jstring jPiece = env->NewStringUTF(
+            is_valid_utf8(cached_chars.c_str()) ? cached_chars.c_str() : "\xEF\xBF\xBD");
         env->CallVoidMethod(callback, onTokenMethod, jPiece);
         env->DeleteLocalRef(jPiece);
     }
@@ -717,7 +743,7 @@ Java_com_nexus_companion_llm_LlamaJni_setThreadCount(JNIEnv *env, jobject, jint 
     ctx_params.n_ubatch = BATCH_SIZE;
     ctx_params.n_threads = threads;
     ctx_params.n_threads_batch = threads;
-    ctx_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
+    ctx_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_AUTO;
 
     g_context = llama_init_from_model(g_model, ctx_params);
     if (!g_context) {

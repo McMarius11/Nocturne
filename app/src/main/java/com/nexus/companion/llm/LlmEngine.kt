@@ -118,6 +118,7 @@ class LlmEngine(private val context: Context) {
     }
 
     /** Track whether we already tried falling back to 1 thread */
+    @Volatile
     private var triedSingleThread = false
 
     /**
