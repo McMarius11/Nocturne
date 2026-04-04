@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import com.nexus.companion.llm.DebugLog
 import android.content.Context
 import android.content.Intent
 import android.hardware.Sensor
@@ -164,7 +165,15 @@ Keep your responses natural and not too long."""
     private fun startCall(modelId: String?) {
         if (_callState.value is CallState.Active) return
 
-        startForeground(NOTIFICATION_ID, buildNotification("Modell wird geladen..."))
+        try {
+            startForeground(NOTIFICATION_ID, buildNotification("Modell wird geladen..."))
+        } catch (e: SecurityException) {
+            // RECORD_AUDIO permission not granted yet — can't start microphone foreground service
+            Log.e(TAG, "Cannot start foreground service: ${e.message}")
+            DebugLog.stt("Phone mode failed: microphone permission not granted")
+            stopSelf()
+            return
+        }
         acquireWakeLocks()
         registerProximitySensor()
         requestAudioFocus()

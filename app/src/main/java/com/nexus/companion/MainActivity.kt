@@ -32,38 +32,55 @@ class MainActivity : ComponentActivity() {
 
     private val viewModel: ChatViewModel by viewModels()
 
-    val permissionLauncher = registerForActivityResult(
+    /** Pending navigation target — set when waiting for permission result */
+    private var pendingScreen: Screen? = null
+
+    private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { /* granted or denied */ }
+    ) { /* granted or denied — no action needed */ }
+
+    private val micPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted && pendingScreen == Screen.Phone) {
+            navigateToScreen?.invoke(Screen.Phone)
+        }
+        pendingScreen = null
+    }
+
+    /** Set by setContent so the permission callback can trigger navigation */
+    private var navigateToScreen: ((Screen) -> Unit)? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
         // Only request notification permission eagerly (needed for downloads)
-        // RECORD_AUDIO is requested lazily when entering Phone mode
         if (android.os.Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
             != PackageManager.PERMISSION_GRANTED
         ) {
-            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
 
         setContent {
             NexusTheme {
                 var currentScreen by remember { mutableStateOf<Screen>(Screen.Chat) }
+                navigateToScreen = { currentScreen = it }
 
                 when (currentScreen) {
                     Screen.Chat -> ChatScreen(
                         viewModel = viewModel,
                         onNavigateToPhone = {
-                            // Request mic permission lazily before entering phone mode
+                            // Only enter phone mode when RECORD_AUDIO is granted
                             if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
-                                != PackageManager.PERMISSION_GRANTED
+                                == PackageManager.PERMISSION_GRANTED
                             ) {
-                                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                currentScreen = Screen.Phone
+                            } else {
+                                pendingScreen = Screen.Phone
+                                micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                             }
-                            currentScreen = Screen.Phone
                         },
                         onNavigateToDebugLog = { currentScreen = Screen.Debug },
                         onNavigateToSettings = { currentScreen = Screen.Settings }
