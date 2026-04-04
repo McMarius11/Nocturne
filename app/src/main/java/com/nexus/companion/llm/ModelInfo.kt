@@ -21,6 +21,19 @@ data class ModelInfo(
     companion object {
         // --- Recommended: Gemma 4 E4B ---
 
+        val GEMMA4_E4B_UNCENSORED = ModelInfo(
+            id = "gemma4-e4b-uncensored",
+            displayName = "Gemma 4 E4B Unzensiert",
+            fileName = "Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf",
+            downloadUrl = "https://huggingface.co/HauhauCS/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive/resolve/main/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf",
+            sizeGb = 5.0f,
+            sizeBytes = 5_000_000_000L,
+            batteryPerHour = 12,
+            description = "Empfohlen — Gemma 4, unzensiert, multilingual (5 GB)",
+            promptFormat = PromptFormat.GEMMA,
+            contextLength = 8192
+        )
+
         val GEMMA4_E4B = ModelInfo(
             id = "gemma4-e4b",
             displayName = "Gemma 4 E4B",
@@ -29,7 +42,7 @@ data class ModelInfo(
             sizeGb = 5.0f,
             sizeBytes = 5_000_000_000L,
             batteryPerHour = 12,
-            description = "Empfohlen — Gemma 4, multilingual, 128K context (5 GB)",
+            description = "Gemma 4, offiziell, multilingual (5 GB)",
             promptFormat = PromptFormat.GEMMA,
             contextLength = 8192
         )
@@ -78,6 +91,7 @@ data class ModelInfo(
         )
 
         val ALL_MODELS = listOf(
+            GEMMA4_E4B_UNCENSORED,
             GEMMA4_E4B,
             QWEN3_4B_ABLITERATED,
             NOROMAID_7B,

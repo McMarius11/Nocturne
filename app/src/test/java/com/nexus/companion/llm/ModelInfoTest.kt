@@ -9,8 +9,8 @@ import org.junit.Test
 class ModelInfoTest {
 
     @Test
-    fun allModelsContainsFourModels() {
-        assertEquals(4, ModelInfo.ALL_MODELS.size)
+    fun allModelsContainsFiveModels() {
+        assertEquals(5, ModelInfo.ALL_MODELS.size)
     }
 
     @Test
@@ -62,7 +62,7 @@ class ModelInfoTest {
 
     @Test
     fun gemma4ModelUsesGemmaFormat() {
-        val gemma = ModelInfo.findById("gemma4-e4b")
+        val gemma = ModelInfo.findById("gemma4-e4b-uncensored")
         assertNotNull(gemma)
         assertEquals(PromptFormat.GEMMA, gemma!!.promptFormat)
         assertTrue(gemma.sizeGb >= 4.0f)
