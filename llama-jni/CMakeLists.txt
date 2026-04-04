@@ -15,15 +15,29 @@ set(LLAMA_CURL OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(GGML_LTO ON CACHE BOOL "" FORCE)
 
-# Android threading: OpenMP MUST be OFF — causes deadlocks in llama_decode
+# Android ABI detection — MUST set GGML_SYSTEM_ARCH manually for cross-compilation.
+# The automatic detection via ggml_get_system_arch() / CMAKE_SYSTEM_PROCESSOR
+# doesn't work reliably with Android NDK toolchain files.
+# (See llama.cpp's own Android example: examples/llama.android/)
+if(DEFINED ANDROID_ABI)
+    message(STATUS "Android ABI detected: ${ANDROID_ABI}")
+    if(ANDROID_ABI STREQUAL "arm64-v8a")
+        set(GGML_SYSTEM_ARCH "ARM")
+    elseif(ANDROID_ABI STREQUAL "x86_64")
+        set(GGML_SYSTEM_ARCH "x86")
+    endif()
+    message(STATUS "GGML_SYSTEM_ARCH set to: ${GGML_SYSTEM_ARCH}")
+endif()
+
+# Android threading: OpenMP OFF — may cause deadlocks in llama_decode
 # on Android NDK with c++_shared STL. llama.cpp's own thread pool works fine.
 set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
 
-# ARM optimizations for Tensor G4 (Pixel 9 Pro) — ARMv9, dotprod, i8mm
+# ARM optimizations for Tensor G4 (Pixel 9 Pro) — ARMv9
 # CRITICAL: GGML_NATIVE is OFF for cross-compilation, so we MUST set
 # GGML_CPU_ARM_ARCH to enable ARM SIMD features. Without this, ggml
 # falls back to base armv8-a (scalar only) → 10-50x slower.
-# Tensor G4: Cortex-X4/A720 support dotprod, i8mm, fp16, sve
+# Cortex-X4/A720 support: dotprod, i8mm, fp16, sve
 set(GGML_CPU_ARM_ARCH "armv8.6-a+dotprod+i8mm+fp16+sve" CACHE STRING "" FORCE)
 
 # KleidiAI provides optimized matmul kernels for ARM (20-30% speedup)
@@ -36,7 +50,6 @@ set(GGML_CPU_REPACK ON CACHE BOOL "" FORCE)
 set(GGML_LLAMAFILE ON CACHE BOOL "" FORCE)
 
 # Build llama.cpp using its own CMake build system
-# This is robust against internal restructuring of llama.cpp
 add_subdirectory(${LLAMA_CPP_DIR} ${CMAKE_CURRENT_BINARY_DIR}/llama.cpp)
 
 # JNI bridge shared library (LLM inference only — TTS uses sherpa-onnx)
