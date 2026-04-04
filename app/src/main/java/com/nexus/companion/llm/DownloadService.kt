@@ -208,12 +208,17 @@ class DownloadService : Service() {
             return true
         }
 
-        // Check network connectivity
-        val cm = getSystemService(android.net.ConnectivityManager::class.java)
-        if (cm?.activeNetwork == null) {
-            setProgress(ModelManager.DownloadState.Error("Keine Internetverbindung"))
-            updateNotification("Keine Internetverbindung", 0)
-            return false
+        // Check network connectivity (gracefully skip if permission missing)
+        try {
+            val cm = getSystemService(android.net.ConnectivityManager::class.java)
+            if (cm?.activeNetwork == null) {
+                setProgress(ModelManager.DownloadState.Error("Keine Internetverbindung"))
+                updateNotification("Keine Internetverbindung", 0)
+                return false
+            }
+        } catch (e: SecurityException) {
+            // ACCESS_NETWORK_STATE not granted — skip check, let OkHttp handle it
+            Log.w(TAG, "Cannot check network state: ${e.message}")
         }
 
         val tempFile = File(modelsDir, "${model.fileName}.tmp")
