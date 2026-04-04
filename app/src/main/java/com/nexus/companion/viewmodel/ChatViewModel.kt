@@ -288,6 +288,24 @@ Keep your responses natural and not too long."""
         }
     }
 
+    /** Play a short preview of the selected speaker voice */
+    fun previewSpeaker(speakerId: Int) {
+        val speaker = com.nexus.companion.tts.TtsSpeaker.findById(speakerId) ?: return
+        val previewText = "Hi, I'm ${speaker.name}. Nice to meet you!"
+        // Temporarily set speaker, play preview, restore original
+        val originalId = _currentSpeakerId.value
+        ttsEngine.setSpeakerId(speakerId)
+        viewModelScope.launch {
+            try {
+                ttsEngine.speak(previewText)
+            } catch (e: Exception) {
+                DebugLog.tts("Preview error: ${e.message}")
+            } finally {
+                ttsEngine.setSpeakerId(originalId)
+            }
+        }
+    }
+
     // ===== Auto TTS =====
 
     fun toggleAutoTts() {

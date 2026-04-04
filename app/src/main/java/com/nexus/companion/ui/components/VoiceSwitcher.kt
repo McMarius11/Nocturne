@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -57,6 +58,7 @@ fun VoiceSwitcherSheet(
     onProfileSelected: (VoiceProfile) -> Unit,
     onTtsModelSelected: (TtsModelInfo) -> Unit,
     onSpeakerSelected: (Int) -> Unit,
+    onSpeakerPreview: (Int) -> Unit,
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -169,12 +171,11 @@ fun VoiceSwitcherSheet(
 
                 TtsSpeaker.KOKORO_SPEAKERS.forEach { speaker ->
                     val isSelected = speaker.id == currentSpeakerId
-                    VoiceCard(
-                        name = speaker.displayName,
-                        description = speaker.name,
-                        languages = speaker.accent,
+                    SpeakerCard(
+                        speaker = speaker,
                         isSelected = isSelected,
-                        onClick = { onSpeakerSelected(speaker.id) }
+                        onSelect = { onSpeakerSelected(speaker.id) },
+                        onPreview = { onSpeakerPreview(speaker.id) }
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                 }
@@ -344,6 +345,68 @@ private fun TtsModelCard(
                     color = NexusPrimary,
                     trackColor = NexusSurfaceVariant,
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SpeakerCard(
+    speaker: TtsSpeaker,
+    isSelected: Boolean,
+    onSelect: () -> Unit,
+    onPreview: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = if (isSelected) NexusSurfaceVariant else NexusCard,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onSelect() }
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(12.dp)
+                .fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                if (isSelected) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(NexusPrimary)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                Text(
+                    text = speaker.displayName,
+                    fontSize = 14.sp,
+                    color = if (isSelected) NexusPrimary else NexusTextPrimary
+                )
+            }
+
+            // Play preview button
+            Surface(
+                shape = CircleShape,
+                color = NexusSurfaceVariant,
+                modifier = Modifier
+                    .size(32.dp)
+                    .clickable { onPreview() }
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Default.PlayArrow,
+                        contentDescription = "Vorhören",
+                        tint = NexusPrimary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
         }
     }

@@ -533,6 +533,9 @@ fun ChatScreen(
             onSpeakerSelected = { speakerId ->
                 viewModel.selectSpeaker(speakerId)
             },
+            onSpeakerPreview = { speakerId ->
+                viewModel.previewSpeaker(speakerId)
+            },
             onDismiss = { showVoiceSwitcher = false }
         )
     }
