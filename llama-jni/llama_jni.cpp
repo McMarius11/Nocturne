@@ -144,7 +144,8 @@ extern "C" {
 
 /**
  * Load all CPU backend variants from the app's native library directory.
- * Must be called once before loadModel() when using GGML_BACKEND_DL.
+ * Only needed with GGML_BACKEND_DL=ON. With static linking, this is a no-op
+ * but kept for API compatibility.
  */
 JNIEXPORT void JNICALL
 Java_com_nexus_companion_llm_LlamaJni_loadBackends(
@@ -152,27 +153,11 @@ Java_com_nexus_companion_llm_LlamaJni_loadBackends(
     jstring nativeLibDir
 ) {
     std::lock_guard<std::mutex> lock(g_mutex);
-
-    if (g_backend_initialized) {
-        LOGI("Backends already loaded, skipping");
-        return;
-    }
-
+    // With static linking (BUILD_SHARED_LIBS=OFF), backends are compiled in.
+    // Just log for debugging.
     const char *path = env->GetStringUTFChars(nativeLibDir, nullptr);
-    if (!path) {
-        LOGE("Failed to get native lib dir string");
-        return;
-    }
-    LOGI("Loading backends from: %s", path);
-    ggml_backend_load_all_from_path(path);
-    env->ReleaseStringUTFChars(nativeLibDir, path);
-
-    llama_backend_init();
-    g_backend_initialized = true;
-
-    size_t n_reg = ggml_backend_reg_count();
-    size_t n_dev = ggml_backend_dev_count();
-    LOGI("Backends loaded: %zu registrations, %zu devices", n_reg, n_dev);
+    LOGI("loadBackends called (static build, path=%s)", path ? path : "null");
+    if (path) env->ReleaseStringUTFChars(nativeLibDir, path);
 }
 
 JNIEXPORT jboolean JNICALL
@@ -193,11 +178,11 @@ Java_com_nexus_companion_llm_LlamaJni_loadModel(
     if (g_model) { llama_model_free(g_model); g_model = nullptr; }
     reset_state(false);
 
-    // Backends must be loaded via loadBackends() before calling loadModel()
+    // Initialize backend (only once)
     if (!g_backend_initialized) {
-        LOGE("loadModel called before loadBackends()! Call loadBackends() first.");
-        g_last_error = "Backends not loaded — call loadBackends() first";
-        return JNI_FALSE;
+        llama_backend_init();
+        g_backend_initialized = true;
+        LOGI("Backend initialized (static build)");
     }
 
     const char *path = env->GetStringUTFChars(modelPath, nullptr);
