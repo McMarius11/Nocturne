@@ -151,6 +151,13 @@ Java_com_nexus_companion_llm_LlamaJni_loadBackends(
     JNIEnv *env, jobject,
     jstring nativeLibDir
 ) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+
+    if (g_backend_initialized) {
+        LOGI("Backends already loaded, skipping");
+        return;
+    }
+
     const char *path = env->GetStringUTFChars(nativeLibDir, nullptr);
     if (!path) {
         LOGE("Failed to get native lib dir string");
@@ -160,9 +167,12 @@ Java_com_nexus_companion_llm_LlamaJni_loadBackends(
     ggml_backend_load_all_from_path(path);
     env->ReleaseStringUTFChars(nativeLibDir, path);
 
+    llama_backend_init();
+    g_backend_initialized = true;
+
     size_t n_reg = ggml_backend_reg_count();
     size_t n_dev = ggml_backend_dev_count();
-    LOGI("Loaded %zu backend registrations, %zu devices", n_reg, n_dev);
+    LOGI("Backends loaded: %zu registrations, %zu devices", n_reg, n_dev);
 }
 
 JNIEXPORT jboolean JNICALL
@@ -183,13 +193,11 @@ Java_com_nexus_companion_llm_LlamaJni_loadModel(
     if (g_model) { llama_model_free(g_model); g_model = nullptr; }
     reset_state(false);
 
-    // Initialize backend (only once)
+    // Backends must be loaded via loadBackends() before calling loadModel()
     if (!g_backend_initialized) {
-        // With GGML_BACKEND_DL=ON, backends are loaded as dynamic .so files
-        // We need to load them from the app's native lib directory
-        llama_backend_init();
-        g_backend_initialized = true;
-        LOGI("Backend initialized");
+        LOGE("loadModel called before loadBackends()! Call loadBackends() first.");
+        g_last_error = "Backends not loaded — call loadBackends() first";
+        return JNI_FALSE;
     }
 
     const char *path = env->GetStringUTFChars(modelPath, nullptr);
