@@ -142,6 +142,13 @@ class LlmEngine(private val context: Context) {
                     kotlinx.coroutines.delay(10_000)
                     DebugLog.llm("Still generating... ${elapsed}s ($tokenCount tokens so far)")
                     elapsed += 10
+                    // Hard timeout: abort after 90s with no tokens (prompt decode hung)
+                    if (elapsed >= 90 && tokenCount == 0) {
+                        DebugLog.llm("TIMEOUT: Aborting generation — no tokens after ${elapsed}s")
+                        DebugLog.llm("This usually means the model is too slow for this device or has a compatibility issue.")
+                        jni.abort()
+                        break
+                    }
                 }
             }
 
