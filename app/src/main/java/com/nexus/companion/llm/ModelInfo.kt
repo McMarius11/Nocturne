@@ -19,19 +19,19 @@ data class ModelInfo(
     val contextLength: Int = 8192
 ) {
     companion object {
-        // --- Recommended: Gemma 4 E4B Uncensored ---
+        // --- Recommended: Gemma 4 E4B ---
 
-        val GEMMA4_E4B_UNCENSORED = ModelInfo(
-            id = "gemma4-e4b-uncensored",
+        val GEMMA4_E4B = ModelInfo(
+            id = "gemma4-e4b",
             displayName = "Gemma 4 E4B",
-            fileName = "Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf",
-            downloadUrl = "https://huggingface.co/HauhauCS/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive/resolve/main/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf",
+            fileName = "google_gemma-4-E4B-it-Q4_K_M.gguf",
+            downloadUrl = "https://huggingface.co/bartowski/google_gemma-4-E4B-it-GGUF/resolve/main/google_gemma-4-E4B-it-Q4_K_M.gguf",
             sizeGb = 5.0f,
             sizeBytes = 5_000_000_000L,
             batteryPerHour = 12,
-            description = "Empfohlen — Gemma 4, unzensiert, multilingual (5 GB)",
+            description = "Empfohlen — Gemma 4, multilingual, 128K context (5 GB)",
             promptFormat = PromptFormat.GEMMA,
-            contextLength = 8192  // 128K native, but 8K is practical on mobile
+            contextLength = 8192
         )
 
         // --- Uncensored / Abliterated ---
@@ -78,7 +78,7 @@ data class ModelInfo(
         )
 
         val ALL_MODELS = listOf(
-            GEMMA4_E4B_UNCENSORED,
+            GEMMA4_E4B,
             QWEN3_4B_ABLITERATED,
             NOROMAID_7B,
             MYTHOMAX_13B

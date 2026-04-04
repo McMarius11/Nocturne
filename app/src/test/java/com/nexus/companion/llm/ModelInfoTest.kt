@@ -62,7 +62,7 @@ class ModelInfoTest {
 
     @Test
     fun gemma4ModelUsesGemmaFormat() {
-        val gemma = ModelInfo.findById("gemma4-e4b-uncensored")
+        val gemma = ModelInfo.findById("gemma4-e4b")
         assertNotNull(gemma)
         assertEquals(PromptFormat.GEMMA, gemma!!.promptFormat)
         assertTrue(gemma.sizeGb >= 4.0f)
