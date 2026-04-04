@@ -63,6 +63,8 @@ fun PhoneScreen(
     viewModel: ChatViewModel,
     onHangUp: () -> Unit
 ) {
+    androidx.activity.compose.BackHandler { onHangUp() }
+
     val isGenerating by viewModel.phoneIsGenerating.collectAsState()
     val isSpeaking by viewModel.isSpeaking.collectAsState()
     val callState by viewModel.phoneCallState.collectAsState()

@@ -22,8 +22,8 @@ set(GGML_OPENMP ON CACHE BOOL "" FORCE)
 # This is robust against internal restructuring of llama.cpp
 add_subdirectory(${LLAMA_CPP_DIR} ${CMAKE_CURRENT_BINARY_DIR}/llama.cpp)
 
-# JNI bridge shared library (LLM + TTS)
-add_library(nexus-llama SHARED llama_jni.cpp tts_jni.cpp)
+# JNI bridge shared library (LLM inference only — TTS uses sherpa-onnx)
+add_library(nexus-llama SHARED llama_jni.cpp)
 
 # Include paths for llama.cpp common headers (sampling.h, common.h, etc.)
 target_include_directories(nexus-llama PRIVATE

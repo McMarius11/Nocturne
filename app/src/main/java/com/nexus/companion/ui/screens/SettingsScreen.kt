@@ -58,6 +58,8 @@ fun SettingsScreen(
     viewModel: ChatViewModel,
     onBack: () -> Unit
 ) {
+    androidx.activity.compose.BackHandler { onBack() }
+
     val isModelLoaded by viewModel.isModelLoaded.collectAsState()
     val currentModel by viewModel.currentModelId.collectAsState()
     val voiceProfile by viewModel.voiceProfile.collectAsState()

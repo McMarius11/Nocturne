@@ -59,6 +59,8 @@ fun DebugLogScreen(
     onBack: () -> Unit,
     debugInfo: String = ""
 ) {
+    androidx.activity.compose.BackHandler { onBack() }
+
     val context = LocalContext.current
     val entries by DebugLog.entries.collectAsState()
     val listState = rememberLazyListState()
