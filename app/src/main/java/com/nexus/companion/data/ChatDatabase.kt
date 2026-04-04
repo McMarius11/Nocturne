@@ -31,15 +31,14 @@ abstract class ChatDatabase : RoomDatabase() {
 
         fun getInstance(context: Context): ChatDatabase {
             return INSTANCE ?: synchronized(this) {
-                val instance = Room.databaseBuilder(
+                INSTANCE ?: Room.databaseBuilder(
                     context.applicationContext,
                     ChatDatabase::class.java,
                     "nexus_companion.db"
                 )
                     .addMigrations(MIGRATION_1_2)
                     .build()
-                INSTANCE = instance
-                instance
+                    .also { INSTANCE = it }
             }
         }
     }

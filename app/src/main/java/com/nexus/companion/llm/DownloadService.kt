@@ -203,8 +203,8 @@ class DownloadService : Service() {
     private suspend fun performDownload(model: ModelInfo): Boolean {
         val targetFile = File(modelsDir, model.fileName)
 
-        // Already downloaded
-        if (targetFile.exists() && targetFile.length() > (model.sizeBytes * 0.9)) {
+        // Already downloaded (99% threshold — consistent with verification below)
+        if (targetFile.exists() && targetFile.length() >= (model.sizeBytes * 0.99)) {
             return true
         }
 
@@ -260,6 +260,7 @@ class DownloadService : Service() {
 
                 val body = response.body
                 if (body == null) {
+                    response.close()
                     lastError = "Leere Antwort vom Server"
                     if (attempt < 3) { delay(attempt * 2000L); continue }
                     setProgress(ModelManager.DownloadState.Error(lastError!!))
@@ -341,40 +342,39 @@ class DownloadService : Service() {
     private fun extractTarBz2(archiveFile: File, targetDir: File): Boolean {
         return try {
             targetDir.mkdirs()
-            val fis = FileInputStream(archiveFile)
-            val bis = BufferedInputStream(fis)
-            val bzis = BZip2CompressorInputStream(bis)
-            val tar = TarArchiveInputStream(bzis)
+            FileInputStream(archiveFile).use { fis ->
+                BufferedInputStream(fis).use { bis ->
+                    BZip2CompressorInputStream(bis).use { bzis ->
+                        TarArchiveInputStream(bzis).use { tar ->
+                            var entry = tar.nextEntry
+                            val topLevelDir = entry?.name?.split("/")?.firstOrNull() ?: ""
 
-            var entry = tar.nextEntry
-            // Detect top-level directory name for stripping
-            val topLevelDir = entry?.name?.split("/")?.firstOrNull() ?: ""
+                            while (entry != null) {
+                                var entryName = entry.name
+                                if (topLevelDir.isNotEmpty() && entryName.startsWith("$topLevelDir/")) {
+                                    entryName = entryName.removePrefix("$topLevelDir/")
+                                }
 
-            while (entry != null) {
-                // Strip top-level directory from path
-                var entryName = entry.name
-                if (topLevelDir.isNotEmpty() && entryName.startsWith("$topLevelDir/")) {
-                    entryName = entryName.removePrefix("$topLevelDir/")
-                }
+                                if (entryName.isBlank()) {
+                                    entry = tar.nextEntry
+                                    continue
+                                }
 
-                if (entryName.isBlank()) {
-                    entry = tar.nextEntry
-                    continue
-                }
-
-                val outFile = File(targetDir, entryName)
-                if (entry.isDirectory) {
-                    outFile.mkdirs()
-                } else {
-                    outFile.parentFile?.mkdirs()
-                    FileOutputStream(outFile).use { fos ->
-                        tar.copyTo(fos)
+                                val outFile = File(targetDir, entryName)
+                                if (entry.isDirectory) {
+                                    outFile.mkdirs()
+                                } else {
+                                    outFile.parentFile?.mkdirs()
+                                    FileOutputStream(outFile).use { fos ->
+                                        tar.copyTo(fos)
+                                    }
+                                }
+                                entry = tar.nextEntry
+                            }
+                        }
                     }
                 }
-                entry = tar.nextEntry
             }
-
-            tar.close()
             Log.i(TAG, "Extracted ${archiveFile.name} → ${targetDir.absolutePath}")
             true
         } catch (e: Exception) {

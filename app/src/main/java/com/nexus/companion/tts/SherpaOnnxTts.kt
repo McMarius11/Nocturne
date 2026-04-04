@@ -140,7 +140,7 @@ class SherpaOnnxTts {
         }
     }
 
-    private fun playAudio(samples: FloatArray, sampleRate: Int) {
+    private suspend fun playAudio(samples: FloatArray, sampleRate: Int) {
         val pcm = ShortArray(samples.size) { i ->
             (samples[i].coerceIn(-1f, 1f) * 32767).toInt().toShort()
         }
@@ -173,9 +173,9 @@ class SherpaOnnxTts {
         audioTrack?.write(pcm, 0, pcm.size)
         audioTrack?.play()
 
-        // Wait for playback
+        // Wait for playback (using delay instead of Thread.sleep to avoid blocking dispatcher)
         val durationMs = (samples.size * 1000L) / sampleRate
-        Thread.sleep(durationMs + 200)
+        kotlinx.coroutines.delay(durationMs + 200)
         audioTrack?.stop()
     }
 
