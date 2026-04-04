@@ -50,27 +50,22 @@ All models are GGUF Q4_K_M quantized and downloaded by the user at runtime from 
 ## Voice / TTS Status
 
 ### What works now
-- **Android System TTS** — built-in, always available, German + English
-- Speaker toggle works correctly (uses VOICE_COMMUNICATION audio stream)
 
-### What's prepared (pending upstream llama.cpp support)
+| Engine | Quality | Languages | Size | Status |
+|--------|---------|-----------|------|--------|
+| **Kokoro** (sherpa-onnx) | Sehr hoch | EN (11 Stimmen) | 346 MB | **Funktioniert** |
+| **Piper thorsten** (sherpa-onnx) | Gut | DE (emotional) | 75 MB | **Funktioniert** |
+| **Android System TTS** | Basis | DE + EN | 0 MB | Immer verfügbar |
+
+Neural TTS uses [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) (ONNX Runtime), not llama.cpp.
+Models are downloaded by the user at runtime.
+
+### Future (pending upstream llama.cpp support)
 
 | Model | What it does | Status | Blocking on |
 |-------|-------------|--------|-------------|
-| **Liquid AI LFM2.5-Audio** | End-to-end Audio-LM: ASR+TTS+Chat in one model, DE+EN+6 languages, 1.5B params, ~855 MB | Config + UI ready, downloadable | [llama.cpp PR #18641](https://github.com/ggml-org/llama.cpp/pull/18641) |
-| **Sesame CSM** | Highest quality conversational voice, EN only, 1B params | Config ready (experimental) | [llama.cpp Issue #12392](https://github.com/ggml-org/llama.cpp/issues/12392) |
-
-### Why not other TTS models?
-
-| Model | Problem |
-|-------|---------|
-| OuteTTS 0.3 | [Not supported](https://huggingface.co/OuteAI/OuteTTS-0.3-500M-GGUF/discussions/2) in llama.cpp (only v0.2 works) |
-| OuteTTS 1.0 | [WIP PR](https://github.com/ggml-org/llama.cpp/pull/12794) not merged |
-| Kokoro | Lives in separate [TTS.cpp](https://github.com/mmwillet/TTS.cpp) project with incompatible GGML fork |
-| NeuTTS | English only, GGUF URLs unverified |
-| Piper/sherpa-onnx | Works but quality is marginal upgrade over Android System TTS |
-
-**Bottom line:** Neural TTS on Android via llama.cpp is not yet mature. We're prepared for LFM2.5-Audio (the best option) and Sesame CSM — once either PR is merged in llama.cpp, we update the tag and it works.
+| **Liquid AI LFM2.5-Audio** | End-to-end Audio-LM: ASR+TTS+Chat in one model, DE+EN+6 languages | Config ready | [llama.cpp PR #18641](https://github.com/ggml-org/llama.cpp/pull/18641) |
+| **Sesame CSM** | Highest quality conversational voice, EN only | Experimental | [llama.cpp Issue #12392](https://github.com/ggml-org/llama.cpp/issues/12392) |
 
 ## Memory System
 
@@ -105,14 +100,19 @@ Memory is stored in a local Room database and persists across app restarts.
 ├─────────────────────────────────────────────┤
 │  Engines                                    │
 │  ├── LlmEngine     (singleton, prompts)     │
-│  ├── NeuTtsEngine   (TTS fallback chain)    │
-│  ├── CsmEngine      (neural TTS, prepared)  │
+│  ├── NeuTtsEngine   (TTS: Kokoro/Piper/Sys) │
+│  ├── SherpaOnnxTts  (sherpa-onnx wrapper)   │
 │  ├── STT Manager    (SpeechRecognizer)       │
 │  └── MemoryExtractor (regex + keyword)      │
 ├─────────────────────────────────────────────┤
 │  Native (C++ / JNI)                         │
 │  ├── llama_jni.cpp  (LLM inference)         │
 │  └── tts_jni.cpp    (TTS, prepared)         │
+├─────────────────────────────────────────────┤
+│  sherpa-onnx (TTS runtime)                  │
+│  ├── libsherpa-onnx-jni.so                  │
+│  ├── libonnxruntime.so                      │
+│  └── Kokoro / Piper ONNX models            │
 ├─────────────────────────────────────────────┤
 │  llama.cpp (pinned to tag b8648)            │
 │  ├── common (sampler, tokenizer, batch)     │
@@ -173,7 +173,7 @@ GitHub Actions builds on every push:
 
 ## Known Limitations
 
-1. **Neural TTS not yet functional** — Android System TTS is the only working voice output. Waiting for llama.cpp upstream (LFM2.5-Audio PR #18641 or Sesame CSM Issue #12392).
+1. **Neural TTS available** — Kokoro (EN) and Piper thorsten (DE) via sherpa-onnx. LFM2.5-Audio and Sesame CSM still pending llama.cpp upstream.
 2. ~~No streaming text~~ — **Fixed!** Tokens now stream in real-time via JNI callback.
 3. **Generation can be slow** — 5–15 seconds on a Pixel 9 with 4B models. 60-second timeout prevents infinite hangs.
 4. **First launch requires download** — 2.7–7.9 GB model download needed before first use.

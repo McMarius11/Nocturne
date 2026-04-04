@@ -1,20 +1,22 @@
 package com.nexus.companion.tts
 
 import android.content.Context
-import android.media.AudioAttributes
-import android.media.AudioFormat
-import android.media.AudioTrack
 import android.util.Log
 import com.nexus.companion.VoiceProfile
+import com.nexus.companion.llm.DebugLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileOutputStream
 
 /**
  * TTS engine with 3 backends (priority order):
- * 1. CsmEngine (OuteTTS via llama.cpp) — neural, DE+EN, best quality
- * 2. NeuTTS Nano (planned) — neural, separate DE/EN models
- * 3. Android System TTS — fallback, always available
+ * 1. sherpa-onnx Kokoro (English, high quality neural TTS)
+ * 2. sherpa-onnx Piper/VITS (German, medium quality neural TTS)
+ * 3. Android System TTS (fallback, always available)
+ *
+ * Models are downloaded at runtime to app filesDir/tts-models/.
+ * espeak-ng-data is bundled in assets or extracted on first use.
  */
 class NeuTtsEngine(private val context: Context) {
 
@@ -22,23 +24,19 @@ class NeuTtsEngine(private val context: Context) {
         private const val TAG = "NeuTtsEngine"
     }
 
-    private var audioTrack: AudioTrack? = null
     private var fallbackTts: android.speech.tts.TextToSpeech? = null
     private var fallbackReady = false
 
-    // Neural TTS via llama.cpp (OuteTTS / CSM)
-    private var csmEngine: CsmEngine? = null
-    private var neuralTtsReady = false
-    private var activeTtsModel: TtsModelInfo? = null
+    private var sherpaOnnx: SherpaOnnxTts? = null
+    private var activeTtsModelId: String? = null
 
     private var currentProfile: VoiceProfile = VoiceProfile.ANDROID_DE
 
-    /** Shared latch for TTS completion — reset on each speak() call */
     @Volatile
     private var completionLatch: java.util.concurrent.CountDownLatch? = null
 
-    private val modelsDir: File
-        get() = File(context.filesDir, "models")
+    private val ttsModelsDir: File
+        get() = File(context.filesDir, "tts-models").also { it.mkdirs() }
 
     fun initialize() {
         // Android System TTS (always available fallback)
@@ -51,7 +49,6 @@ class NeuTtsEngine(private val context: Context) {
                         .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
                         .build()
                 )
-                // Set listener ONCE (reuses completionLatch field)
                 fallbackTts?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
                     override fun onStart(id: String?) {}
                     override fun onDone(id: String?) { completionLatch?.countDown() }
@@ -62,43 +59,26 @@ class NeuTtsEngine(private val context: Context) {
             }
         }
 
-        // Try to initialize neural TTS
-        csmEngine = CsmEngine(context)
-        csmEngine?.initialize()
-
-        // Check if OuteTTS models are downloaded
-        checkNeuralTtsAvailability()
-    }
-
-    /** Check if any neural TTS model is downloaded */
-    private fun checkNeuralTtsAvailability() {
-        activeTtsModel = TtsModelInfo.ALL_TTS_MODELS.firstOrNull { model ->
-            File(modelsDir, model.fileName).exists()
-        }
-        neuralTtsReady = activeTtsModel != null
-
-        if (neuralTtsReady) {
-            Log.i(TAG, "Neural TTS model found: ${activeTtsModel!!.fileName}")
+        // Initialize sherpa-onnx if library is available
+        if (SherpaOnnxTts.isLibraryAvailable()) {
+            sherpaOnnx = SherpaOnnxTts()
+            DebugLog.tts("sherpa-onnx library available")
         } else {
-            Log.d(TAG, "No neural TTS model, using Android TTS fallback")
+            DebugLog.tts("sherpa-onnx not available, using Android TTS only")
         }
     }
 
-    /** Set the active TTS model by ID (called when user selects in UI) */
     fun setTtsModel(modelId: String?) {
         if (modelId == null) {
-            activeTtsModel = null
-            neuralTtsReady = false
-            csmEngine?.shutdown()
+            activeTtsModelId = null
+            sherpaOnnx?.release()
+            DebugLog.tts("TTS model cleared, using Android System TTS")
             return
         }
-        val model = TtsModelInfo.findById(modelId)
-        if (model != null && File(modelsDir, model.fileName).exists()) {
-            activeTtsModel = model
-            neuralTtsReady = true
-            // Force reload on next speak
-            csmEngine?.shutdown()
-        }
+        activeTtsModelId = modelId
+        // Model will be loaded on first speak()
+        sherpaOnnx?.release()
+        DebugLog.tts("TTS model set: $modelId (will load on speak)")
     }
 
     fun setVoiceProfile(profile: VoiceProfile) {
@@ -108,65 +88,30 @@ class NeuTtsEngine(private val context: Context) {
 
     fun getCurrentProfile(): VoiceProfile = currentProfile
 
-    fun isNeuralTtsAvailable(): Boolean = neuralTtsReady
-
-    /**
-     * Try to load the neural TTS model if files are present but engine not ready.
-     */
-    suspend fun tryLoadNeuralTts() {
-        if (csmEngine?.isReady() == true) return
-        if (!neuralTtsReady || activeTtsModel == null) return
-
-        try {
-            val model = activeTtsModel!!
-            // Neural TTS requires both a TTS model and a vocoder model.
-            // Currently OuteTTS GGUF files don't include a separate vocoder,
-            // so this will fail gracefully and fall back to system TTS.
-            // Full neural TTS support requires vocoder integration in llama.cpp.
-            val vocoderFile = java.io.File(modelsDir, "wavtokenizer-large-75.gguf")
-            if (!vocoderFile.exists()) {
-                Log.d(TAG, "Vocoder not found, neural TTS unavailable (using system TTS)")
-                return
-            }
-            val vocoderModel = TtsModelInfo(
-                id = "wavtokenizer", displayName = "WavTokenizer",
-                fileName = "wavtokenizer-large-75.gguf", downloadUrl = "",
-                sizeBytes = 0, languages = emptyList(), description = ""
-            )
-            val success = csmEngine?.loadModel(model, vocoderModel) ?: false
-            if (success) {
-                Log.i(TAG, "Neural TTS model loaded: ${model.id}")
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to load neural TTS model", e)
-        }
-    }
+    fun isNeuralTtsAvailable(): Boolean = sherpaOnnx != null && activeTtsModelId != null
 
     /**
      * Speak text using the best available TTS backend.
-     * Priority: Neural TTS (OuteTTS) > Android System TTS
+     * Priority: sherpa-onnx (Kokoro/Piper) > Android System TTS
      */
     suspend fun speak(text: String) = withContext(Dispatchers.IO) {
-        // Try neural TTS first — load on first use if needed
-        if (neuralTtsReady) {
-            if (csmEngine?.isReady() != true) {
-                tryLoadNeuralTts()
+        // Try neural TTS if a model is selected
+        if (activeTtsModelId != null && sherpaOnnx != null) {
+            if (!sherpaOnnx!!.isReady) {
+                loadNeuralModel()
             }
-            if (csmEngine?.isReady() == true) {
+            if (sherpaOnnx!!.isReady) {
                 try {
-                    val speakerId = when {
-                        currentProfile.ttsLocale.language == "de" -> "de_female_1"
-                        else -> "en_male_1"
-                    }
-                    csmEngine?.speak(text, speakerId)
+                    sherpaOnnx!!.speak(text)
                     return@withContext
                 } catch (e: Exception) {
                     Log.w(TAG, "Neural TTS failed, falling back to system TTS", e)
+                    DebugLog.tts("Neural TTS failed: ${e.message}, using System TTS")
                 }
             }
         }
 
-        // Fallback to Android System TTS — wait for completion
+        // Fallback to Android System TTS
         if (fallbackReady) {
             val utteranceId = "nexus_tts_${System.currentTimeMillis()}"
             completionLatch = java.util.concurrent.CountDownLatch(1)
@@ -177,27 +122,97 @@ class NeuTtsEngine(private val context: Context) {
                 null,
                 utteranceId
             )
-
-            // Wait for TTS to finish (max 30 seconds to prevent infinite block)
             completionLatch?.await(30, java.util.concurrent.TimeUnit.SECONDS)
         }
     }
 
+    private fun loadNeuralModel() {
+        val modelId = activeTtsModelId ?: return
+        val model = TtsModelInfo.findById(modelId) ?: return
+        val modelDir = File(ttsModelsDir, modelId)
+
+        if (!modelDir.exists()) {
+            DebugLog.tts("TTS model dir not found: ${modelDir.absolutePath}")
+            return
+        }
+
+        // Ensure espeak-ng-data is extracted
+        val espeakDataDir = ensureEspeakData()
+
+        when (model.engine) {
+            TtsModelInfo.TtsEngine.KOKORO -> {
+                sherpaOnnx?.loadKokoro(modelDir, espeakDataDir)
+            }
+            TtsModelInfo.TtsEngine.PIPER -> {
+                val onnxFile = modelDir.listFiles()?.find { it.name.endsWith(".onnx") }
+                if (onnxFile != null) {
+                    sherpaOnnx?.loadPiper(onnxFile, espeakDataDir)
+                } else {
+                    DebugLog.tts("No .onnx file found in ${modelDir.absolutePath}")
+                }
+            }
+            else -> {
+                DebugLog.tts("Unsupported TTS engine: ${model.engine}")
+            }
+        }
+    }
+
+    /**
+     * Extract espeak-ng-data from assets to filesDir if not already present.
+     * Returns the path to the data directory.
+     */
+    private fun ensureEspeakData(): String {
+        val dataDir = File(context.filesDir, "espeak-ng-data")
+        if (dataDir.exists() && dataDir.listFiles()?.isNotEmpty() == true) {
+            return dataDir.absolutePath
+        }
+
+        // Try to extract from assets
+        try {
+            copyAssetDir("espeak-ng-data", dataDir)
+            DebugLog.tts("espeak-ng-data extracted to ${dataDir.absolutePath}")
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not extract espeak-ng-data from assets", e)
+            // The data might be bundled with the TTS model download
+        }
+        return dataDir.absolutePath
+    }
+
+    private fun copyAssetDir(assetPath: String, targetDir: File) {
+        val assets = context.assets
+        val files = assets.list(assetPath) ?: return
+
+        targetDir.mkdirs()
+        for (file in files) {
+            val subAssetPath = "$assetPath/$file"
+            val targetFile = File(targetDir, file)
+            val subFiles = assets.list(subAssetPath)
+
+            if (subFiles != null && subFiles.isNotEmpty()) {
+                // It's a directory, recurse
+                copyAssetDir(subAssetPath, targetFile)
+            } else {
+                // It's a file, copy
+                assets.open(subAssetPath).use { input ->
+                    FileOutputStream(targetFile).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+            }
+        }
+    }
+
     fun stop() {
-        csmEngine?.stop()
-        audioTrack?.stop()
+        sherpaOnnx?.stop()
         fallbackTts?.stop()
     }
 
     fun shutdown() {
-        csmEngine?.shutdown()
-        csmEngine = null
-        audioTrack?.release()
-        audioTrack = null
+        sherpaOnnx?.release()
+        sherpaOnnx = null
         fallbackTts?.shutdown()
         fallbackTts = null
-        neuralTtsReady = false
     }
 
-    fun isAvailable(): Boolean = neuralTtsReady || fallbackReady
+    fun isAvailable(): Boolean = (sherpaOnnx?.isReady == true) || fallbackReady
 }

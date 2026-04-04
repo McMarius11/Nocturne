@@ -404,14 +404,16 @@ Keep your responses natural and not too long."""
             return
         }
 
-        val modelsDir = java.io.File(getApplication<Application>().filesDir, "models")
-        val modelFile = java.io.File(modelsDir, model.fileName)
+        val ttsModelsDir = java.io.File(getApplication<Application>().filesDir, "tts-models")
+        val modelDir = java.io.File(ttsModelsDir, model.id)
 
-        if (modelFile.exists()) {
+        if (modelDir.exists() && modelDir.listFiles()?.isNotEmpty() == true) {
+            // Model already downloaded and extracted
             _currentTtsModelId.value = model.id
             ttsEngine.setTtsModel(model.id)
             viewModelScope.launch { settingsStore.setTtsModelId(model.id) }
         } else {
+            // Download TTS model via DownloadService
             val modelInfo = ModelInfo(
                 id = model.id,
                 displayName = model.displayName,
@@ -423,13 +425,17 @@ Keep your responses natural and not too long."""
                 description = model.description
             )
             llmEngine.getModelManager().startDownload(modelInfo)
+            DebugLog.tts("Started download: ${model.displayName}")
         }
     }
 
     private fun refreshDownloadedTtsModels() {
-        val modelsDir = java.io.File(getApplication<Application>().filesDir, "models")
+        val ttsModelsDir = java.io.File(getApplication<Application>().filesDir, "tts-models")
         _downloadedTtsModels.value = TtsModelInfo.ALL_TTS_MODELS
-            .filter { java.io.File(modelsDir, it.fileName).exists() }
+            .filter {
+                val modelDir = java.io.File(ttsModelsDir, it.id)
+                modelDir.exists() && modelDir.listFiles()?.isNotEmpty() == true
+            }
             .map { it.id }
             .toSet()
     }

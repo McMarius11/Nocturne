@@ -71,6 +71,24 @@ else
     git -C "$LLAMA_DIR" pull --ff-only || true
 fi
 
+# ---- Step 3b: Download sherpa-onnx for TTS ----
+SHERPA_VERSION="1.12.34"
+JNILIBS_DIR="$SCRIPT_DIR/app/src/main/jniLibs/arm64-v8a"
+if [ ! -f "$JNILIBS_DIR/libsherpa-onnx-jni.so" ]; then
+    info "Downloading sherpa-onnx v${SHERPA_VERSION} for TTS..."
+    TMPTAR=$(mktemp /tmp/sherpa-XXXXX.tar.bz2)
+    wget -q --show-progress -O "$TMPTAR" \
+        "https://github.com/k2-fsa/sherpa-onnx/releases/download/v${SHERPA_VERSION}/sherpa-onnx-v${SHERPA_VERSION}-android.tar.bz2"
+    tar xjf "$TMPTAR" -C /tmp
+    mkdir -p "$JNILIBS_DIR"
+    cp "/tmp/sherpa-onnx-v${SHERPA_VERSION}-android/jniLibs/arm64-v8a/libsherpa-onnx-jni.so" "$JNILIBS_DIR/"
+    cp "/tmp/sherpa-onnx-v${SHERPA_VERSION}-android/jniLibs/arm64-v8a/libonnxruntime.so" "$JNILIBS_DIR/"
+    rm -rf "/tmp/sherpa-onnx-v${SHERPA_VERSION}-android" "$TMPTAR"
+    info "sherpa-onnx TTS libs installed"
+else
+    info "sherpa-onnx TTS libs already present"
+fi
+
 # ---- Step 4: Create local.properties ----
 info "Writing local.properties..."
 cat > "$SCRIPT_DIR/local.properties" <<EOF
