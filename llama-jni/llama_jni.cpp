@@ -6,6 +6,7 @@
 #include <mutex>
 #include <unistd.h>
 #include <algorithm>
+#include <cstdarg>
 
 #include "llama.h"
 #include "common.h"
@@ -77,17 +78,41 @@ static void shift_context() {
     g_current_pos -= n_discard;
 }
 
+// Progress callback helpers (set before calling decode_in_batches)
+static JNIEnv   *g_progress_env = nullptr;
+static jobject    g_progress_cb  = nullptr;
+static jmethodID  g_progress_mid = nullptr;
+
+static void report_progress(const char *fmt, ...) {
+    char buf[512];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+    LOGI("%s", buf);
+    if (g_progress_env && g_progress_cb && g_progress_mid) {
+        jstring jmsg = g_progress_env->NewStringUTF(buf);
+        g_progress_env->CallVoidMethod(g_progress_cb, g_progress_mid, jmsg);
+        g_progress_env->DeleteLocalRef(jmsg);
+    }
+}
+
 static int decode_in_batches(const std::vector<llama_token> &tokens, llama_pos start_pos, bool logit_last = false) {
     int n_tokens = (int)tokens.size();
     int max_tokens = g_n_ctx - OVERFLOW_HEADROOM;
     if (n_tokens > max_tokens) {
-        LOGI("Prompt truncated from %d to %d tokens (context limit)", n_tokens, max_tokens);
+        report_progress("Prompt truncated from %d to %d tokens (context limit)", n_tokens, max_tokens);
         n_tokens = max_tokens;
     }
+
+    int n_batches = (n_tokens + BATCH_SIZE - 1) / BATCH_SIZE;
+    report_progress("Decoding %d tokens in %d batch(es), threads=%d", n_tokens, n_batches,
+                    llama_n_threads(g_context));
 
     for (int i = 0; i < n_tokens; i += BATCH_SIZE) {
         if (g_abort) return 2; // abort code
         int cur_size = std::min(n_tokens - i, BATCH_SIZE);
+        int batch_idx = i / BATCH_SIZE + 1;
         common_batch_clear(g_batch);
 
         for (int j = 0; j < cur_size; j++) {
@@ -95,10 +120,16 @@ static int decode_in_batches(const std::vector<llama_token> &tokens, llama_pos s
             common_batch_add(g_batch, tokens[i + j], start_pos + i + j, {0}, want_logit);
         }
 
-        if (llama_decode(g_context, g_batch) != 0) {
-            LOGE("llama_decode failed at batch offset %d", i);
+        report_progress("Batch %d/%d: %d tokens, calling llama_decode...", batch_idx, n_batches, cur_size);
+        auto batch_start = ggml_time_us();
+        int rc = llama_decode(g_context, g_batch);
+        auto batch_ms = (ggml_time_us() - batch_start) / 1000;
+
+        if (rc != 0) {
+            report_progress("llama_decode FAILED at batch %d (rc=%d, %lld ms)", batch_idx, rc, (long long)batch_ms);
             return 1;
         }
+        report_progress("Batch %d/%d decoded in %lld ms", batch_idx, n_batches, (long long)batch_ms);
     }
     return 0;
 }
@@ -369,13 +400,19 @@ Java_com_nexus_companion_llm_LlamaJni_generateStreaming(
         return env->NewStringUTF("[Error: Model not loaded]");
     }
 
-    // Get callback method
+    // Get callback methods
     jclass callbackClass = env->GetObjectClass(callback);
     jmethodID onTokenMethod = env->GetMethodID(callbackClass, "onToken", "(Ljava/lang/String;)V");
-    if (!onTokenMethod) {
-        LOGE("Callback method onToken(String) not found");
+    jmethodID onProgressMethod = env->GetMethodID(callbackClass, "onProgress", "(Ljava/lang/String;)V");
+    if (!onTokenMethod || !onProgressMethod) {
+        LOGE("Callback methods not found (onToken=%p, onProgress=%p)", onTokenMethod, onProgressMethod);
         return env->NewStringUTF("[Error: Invalid callback]");
     }
+
+    // Set up progress reporting so decode_in_batches can call back to Kotlin
+    g_progress_env = env;
+    g_progress_cb  = callback;
+    g_progress_mid = onProgressMethod;
 
     const char *promptStr = env->GetStringUTFChars(prompt, nullptr);
     std::string promptCpp(promptStr);
@@ -385,11 +422,13 @@ Java_com_nexus_companion_llm_LlamaJni_generateStreaming(
     reset_state(true);
     common_sampler_reset(g_sampler);
 
+    report_progress("Tokenizing %d chars (parse_special=true)...", (int)promptCpp.size());
     auto tokens = common_tokenize(g_context, promptCpp, false, true);
-    LOGI("Streaming: %d tokens from %d chars", (int)tokens.size(), (int)promptCpp.size());
+    report_progress("Tokenized: %d tokens from %d chars", (int)tokens.size(), (int)promptCpp.size());
 
     if (tokens.empty()) {
         g_last_error = "Empty prompt after tokenization";
+        g_progress_env = nullptr; g_progress_cb = nullptr; g_progress_mid = nullptr;
         return env->NewStringUTF("[Error: Empty prompt after tokenization]");
     }
 
@@ -401,22 +440,30 @@ Java_com_nexus_companion_llm_LlamaJni_generateStreaming(
             tok_debug += std::to_string(tokens[i]);
             if (i < n_show - 1) tok_debug += ",";
         }
-        LOGI("First tokens: [%s]", tok_debug.c_str());
+        report_progress("First tokens: [%s]", tok_debug.c_str());
     }
 
     // Decode prompt
+    report_progress("Starting prompt decode (n_threads=%d, n_threads_batch=%d)...",
+                    llama_n_threads(g_context), llama_n_threads_batch(g_context));
     const auto decode_start = ggml_time_us();
     int decode_result = decode_in_batches(tokens, 0, true);
     auto decode_ms = (ggml_time_us() - decode_start) / 1000;
 
-    if (decode_result == 2) return env->NewStringUTF("");
+    if (decode_result == 2) {
+        report_progress("Prompt decode aborted");
+        g_progress_env = nullptr; g_progress_cb = nullptr; g_progress_mid = nullptr;
+        return env->NewStringUTF("");
+    }
     if (decode_result != 0) {
         g_last_error = "Decode failed during prompt processing";
+        report_progress("Prompt decode FAILED (rc=%d)", decode_result);
+        g_progress_env = nullptr; g_progress_cb = nullptr; g_progress_mid = nullptr;
         return env->NewStringUTF("[Error: Failed to process prompt]");
     }
 
     g_current_pos = (int)tokens.size();
-    LOGI("Prompt decoded: %lld ms (%.1f t/s)",
+    report_progress("Prompt decoded in %lld ms (%.1f t/s)",
          (long long)decode_ms,
          decode_ms > 0 ? (tokens.size() * 1000.0 / decode_ms) : 0.0);
 
@@ -482,8 +529,14 @@ Java_com_nexus_companion_llm_LlamaJni_generateStreaming(
 
     auto gen_ms = (ggml_time_us() - gen_start) / 1000;
     double tok_per_sec = gen_ms > 0 ? (tokens_generated * 1000.0 / gen_ms) : 0.0;
-    LOGI("Streamed %d tokens (%d chars) in %lld ms (%.1f t/s)",
-         tokens_generated, (int)result.size(), (long long)gen_ms, tok_per_sec);
+    report_progress("Streamed %d tokens (%d chars) in %lld ms (%.1f t/s)%s",
+         tokens_generated, (int)result.size(), (long long)gen_ms, tok_per_sec,
+         g_abort ? " [ABORTED]" : "");
+
+    // Clean up progress callback
+    g_progress_env = nullptr;
+    g_progress_cb  = nullptr;
+    g_progress_mid = nullptr;
 
     return env->NewStringUTF(result.c_str());
 }

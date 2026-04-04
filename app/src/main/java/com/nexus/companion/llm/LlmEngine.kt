@@ -69,7 +69,7 @@ class LlmEngine(private val context: Context) {
             val loadStart = System.currentTimeMillis()
             val success = jni.loadModel(
                 modelPath = path,
-                nThreads = 4,
+                nThreads = 2,
                 contextLength = contextLength
             )
             val loadMs = System.currentTimeMillis() - loadStart
@@ -129,6 +129,10 @@ class LlmEngine(private val context: Context) {
                         val firstTokenMs = System.currentTimeMillis() - genStart
                         DebugLog.llm("First token in ${firstTokenMs}ms: \"${token.take(20)}\"")
                     }
+                }
+
+                override fun onProgress(message: String) {
+                    DebugLog.llm("JNI: $message")
                 }
             }
 

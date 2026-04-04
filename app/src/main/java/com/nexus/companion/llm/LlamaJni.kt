@@ -10,6 +10,7 @@ class LlamaJni {
     /** Callback interface for streaming token generation */
     interface TokenCallback {
         fun onToken(token: String)
+        fun onProgress(message: String)
     }
 
     external fun loadModel(modelPath: String, nThreads: Int, contextLength: Int): Boolean
