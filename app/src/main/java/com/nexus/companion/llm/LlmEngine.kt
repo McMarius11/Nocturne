@@ -132,8 +132,24 @@ class LlmEngine(private val context: Context) {
                 }
             }
 
+            DebugLog.llm("Model state before generate: ${jni.getModelInfo()}")
             DebugLog.llm("Calling JNI generateStreaming...")
-            val result = jni.generateStreaming(prompt, maxTokens, callback)
+
+            // Watchdog: log every 10s while JNI is running so we know it's alive vs hung
+            val watchdogJob = engineScope.launch {
+                var elapsed = 10
+                while (true) {
+                    kotlinx.coroutines.delay(10_000)
+                    DebugLog.llm("Still generating... ${elapsed}s ($tokenCount tokens so far)")
+                    elapsed += 10
+                }
+            }
+
+            val result = try {
+                jni.generateStreaming(prompt, maxTokens, callback)
+            } finally {
+                watchdogJob.cancel()
+            }
             val genMs = System.currentTimeMillis() - genStart
             val tokPerSec = if (genMs > 0) tokenCount * 1000.0 / genMs else 0.0
 
