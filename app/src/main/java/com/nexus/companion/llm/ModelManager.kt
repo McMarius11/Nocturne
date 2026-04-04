@@ -90,6 +90,11 @@ class ModelManager(private val context: Context) {
             return false
         }
 
+        // Set Downloading state BEFORE starting service to avoid race condition:
+        // Without this, loadModel()'s flow.first{Idle||Error} returns immediately
+        // because the service hasn't started yet and state is still Idle.
+        DownloadService._downloadProgress.value = DownloadState.Downloading(model.id, 0f)
+
         DownloadService.startDownload(context, model)
         return true
     }

@@ -7,7 +7,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -49,14 +48,8 @@ class LlmEngine(private val context: Context) {
     suspend fun loadModel(model: ModelInfo): Boolean = withContext(Dispatchers.IO) {
         try {
             if (!modelManager.isModelDownloaded(model)) {
-                val started = modelManager.startDownload(model)
-                if (!started) return@withContext false
-
-                modelManager.downloadProgress.first { state ->
-                    state is ModelManager.DownloadState.Idle || state is ModelManager.DownloadState.Error
-                }
-
-                if (!modelManager.isModelDownloaded(model)) return@withContext false
+                DebugLog.llm("Model not downloaded: ${model.id}")
+                return@withContext false
             }
 
             // Unload previous

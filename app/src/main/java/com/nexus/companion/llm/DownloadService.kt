@@ -191,8 +191,10 @@ class DownloadService : Service() {
                 }
             } finally {
                 releaseWakeLock()
-                // Small delay so user can see final notification
-                delay(1500)
+                // Small delay so user can see final notification/error
+                delay(2000)
+                // Always reset to Idle so UI can refresh and next download can start
+                setProgress(ModelManager.DownloadState.Idle)
                 stopSelf()
             }
         }

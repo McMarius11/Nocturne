@@ -348,6 +348,17 @@ Keep your responses natural and not too long."""
     // ===== Model Management =====
 
     fun switchModel(model: ModelInfo) {
+        val manager = llmEngine.getModelManager()
+        if (!manager.isModelDownloaded(model)) {
+            // Not downloaded yet — start download only, don't try to load
+            val started = manager.startDownload(model)
+            if (!started) {
+                showError("Download konnte nicht gestartet werden. Nicht genug Speicher?")
+            }
+            // Download runs in the background via DownloadService.
+            // User sees progress in ModelSwitcher. When done, they tap again to load.
+            return
+        }
         viewModelScope.launch {
             loadModelInternal(model)
         }
