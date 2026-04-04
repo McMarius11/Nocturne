@@ -26,7 +26,8 @@ fun MessageBubble(
     content: String,
     isUser: Boolean,
     timestamp: Long,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isStreaming: Boolean = false
 ) {
     val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
 

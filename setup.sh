@@ -64,8 +64,8 @@ LLAMA_DIR="$SCRIPT_DIR/external/llama.cpp"
 if [ ! -d "$LLAMA_DIR" ]; then
     info "Cloning llama.cpp..."
     mkdir -p "$SCRIPT_DIR/external"
-    git clone --depth 1 --recurse-submodules --shallow-submodules \
-        https://github.com/ggerganov/llama.cpp.git "$LLAMA_DIR"
+    git clone --depth 1 --branch b8648 --recurse-submodules --shallow-submodules \
+        https://github.com/ggml-org/llama.cpp.git "$LLAMA_DIR"
 else
     info "llama.cpp already present, updating..."
     git -C "$LLAMA_DIR" pull --ff-only || true

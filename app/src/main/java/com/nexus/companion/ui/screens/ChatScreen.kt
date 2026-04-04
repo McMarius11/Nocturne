@@ -100,6 +100,7 @@ fun ChatScreen(
     val errorMessage by viewModel.errorMessage.collectAsState()
     val isModelLoaded by viewModel.isModelLoaded.collectAsState()
     val isLoadingModel by viewModel.isLoadingModel.collectAsState()
+    val streamingText by viewModel.streamingText.collectAsState()
 
     var inputText by remember { mutableStateOf("") }
     var showModelSwitcher by remember { mutableStateOf(false) }
@@ -110,10 +111,15 @@ fun ChatScreen(
     val listState = rememberLazyListState()
     val isDownloading = downloadState is ModelManager.DownloadState.Downloading
 
-    // Auto-scroll to bottom
-    LaunchedEffect(messages.size) {
+    // Unified canSend flag to prevent race conditions
+    val canSend = inputText.isNotBlank() && !isGenerating && !isLoadingModel
+
+    // Auto-scroll to bottom on new messages or streaming updates
+    LaunchedEffect(messages.size, isGenerating, streamingText) {
         if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.size - 1)
+            listState.animateScrollToItem(
+                messages.size - 1 + if (isGenerating) 1 else 0
+            )
         }
     }
 
@@ -134,8 +140,11 @@ fun ChatScreen(
                     Text(
                         text = when {
                             currentModel == null -> "Kein Modell"
-                            isLoadingModel -> "${currentModel} wird geladen..."
-                            isModelLoaded -> currentModel!!
+                            isLoadingModel -> "Wird geladen..."
+                            isModelLoaded -> {
+                                val model = com.nexus.companion.llm.ModelInfo.findById(currentModel!!)
+                                model?.displayName ?: currentModel!!
+                            }
                             else -> "${currentModel} (aus)"
                         },
                         fontSize = 12.sp,
@@ -206,7 +215,7 @@ fun ChatScreen(
             }
         )
 
-        // Download progress bar (visible during model download)
+        // Download progress bar
         if (isDownloading) {
             val progress = (downloadState as ModelManager.DownloadState.Downloading).progress
             Column(
@@ -240,7 +249,7 @@ fun ChatScreen(
             }
         }
 
-        // Messages or Welcome screen
+        // Messages list
         LazyColumn(
             modifier = Modifier
                 .weight(1f)
@@ -249,7 +258,7 @@ fun ChatScreen(
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            if (messages.isEmpty()) {
+            if (messages.isEmpty() && !isGenerating) {
                 item {
                     // Welcome / Onboarding
                     Box(
@@ -266,7 +275,6 @@ fun ChatScreen(
                             Spacer(modifier = Modifier.height(12.dp))
 
                             if (currentModel == null && downloadedModels.isEmpty()) {
-                                // First launch — no model downloaded
                                 Text(
                                     "Willkommen! Um mit Nexus zu chatten,\nlade zuerst ein KI-Modell herunter.",
                                     fontSize = 14.sp,
@@ -291,13 +299,12 @@ fun ChatScreen(
                                 }
                                 Spacer(modifier = Modifier.height(12.dp))
                                 Text(
-                                    "Empfohlen: Gemma 3 4B (2.5 GB)\noder Qwen3 4B (2.7 GB)",
+                                    "Empfohlen: Gemma 4 E4B (5 GB)\noder Qwen3 4B (2.7 GB)",
                                     fontSize = 12.sp,
                                     color = NexusTextDim,
                                     textAlign = TextAlign.Center
                                 )
                             } else if (!isModelLoaded && !isLoadingModel) {
-                                // Model downloaded but not loaded
                                 Text(
                                     "Modell ist ausgeschaltet.",
                                     fontSize = 14.sp,
@@ -311,7 +318,6 @@ fun ChatScreen(
                                     Text("LLM einschalten", color = NexusPrimary)
                                 }
                             } else if (isLoadingModel) {
-                                // Model is loading
                                 Text(
                                     "Modell wird geladen...",
                                     fontSize = 14.sp,
@@ -319,7 +325,6 @@ fun ChatScreen(
                                     textAlign = TextAlign.Center
                                 )
                             } else {
-                                // Ready to chat
                                 Text(
                                     "Schreib mir etwas...",
                                     fontSize = 14.sp,
@@ -340,15 +345,25 @@ fun ChatScreen(
                 )
             }
 
-            // Typing indicator
-            if (isGenerating) {
-                item {
+            // Streaming response (real-time token display)
+            if (isGenerating && streamingText.isNotBlank()) {
+                item(key = "streaming") {
+                    MessageBubble(
+                        content = streamingText,
+                        isUser = false,
+                        timestamp = System.currentTimeMillis(),
+                        isStreaming = true
+                    )
+                }
+            } else if (isGenerating) {
+                // Show typing indicator while waiting for first token
+                item(key = "typing") {
                     TypingIndicator()
                 }
             }
         }
 
-        // Error bar (above input, not behind keyboard)
+        // Error bar (auto-dismisses after 8 seconds)
         if (errorMessage != null) {
             Snackbar(
                 action = {
@@ -392,7 +407,7 @@ fun ChatScreen(
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                 keyboardActions = KeyboardActions(
                     onSend = {
-                        if (inputText.isNotBlank() && !isGenerating && !isLoadingModel) {
+                        if (canSend) {
                             viewModel.sendMessage(inputText.trim())
                             inputText = ""
                         }
@@ -406,7 +421,7 @@ fun ChatScreen(
 
             IconButton(
                 onClick = {
-                    if (inputText.isNotBlank() && !isGenerating && !isLoadingModel) {
+                    if (canSend) {
                         viewModel.sendMessage(inputText.trim())
                         inputText = ""
                     }
@@ -414,18 +429,18 @@ fun ChatScreen(
                 modifier = Modifier
                     .size(48.dp)
                     .clip(CircleShape)
-                    .background(if (inputText.isNotBlank() && !isLoadingModel) NexusPrimary else NexusSurfaceVariant)
+                    .background(if (canSend) NexusPrimary else NexusSurfaceVariant)
             ) {
                 Icon(
                     Icons.AutoMirrored.Filled.Send,
                     contentDescription = "Send",
-                    tint = if (inputText.isNotBlank()) NexusBlack else NexusTextDim
+                    tint = if (canSend) NexusBlack else NexusTextDim
                 )
             }
         }
     }
 
-    // Model switcher bottom sheet (stays open during download)
+    // Model switcher bottom sheet
     if (showModelSwitcher) {
         ModelSwitcherSheet(
             currentModelId = currentModel,

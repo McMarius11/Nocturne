@@ -8,6 +8,7 @@ import com.nexus.companion.VoiceProfile
 import com.nexus.companion.data.ChatDatabase
 import com.nexus.companion.data.ChatRepository
 import com.nexus.companion.data.SettingsStore
+import com.nexus.companion.llm.DebugLog
 import com.nexus.companion.llm.DownloadService
 import com.nexus.companion.llm.LlmEngine
 import com.nexus.companion.llm.ModelInfo
@@ -38,7 +39,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val _isGenerating = MutableStateFlow(false)
     val isGenerating: StateFlow<Boolean> = _isGenerating
 
-    // Separate loading state (model loading) so Send button isn't blocked
     private val _isLoadingModel = MutableStateFlow(false)
     val isLoadingModel: StateFlow<Boolean> = _isLoadingModel
 
@@ -53,11 +53,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     val downloadState = llmEngine.downloadState
 
-    // LLM loaded state — for manual toggle
     private val _isModelLoaded = MutableStateFlow(false)
     val isModelLoaded: StateFlow<Boolean> = _isModelLoaded
 
-    // Phone mode state comes from PhoneCallService (survives screen-off)
+    // Phone mode state
     val phoneCallState: StateFlow<PhoneCallService.CallState> = PhoneCallService.callState
     val sttState: StateFlow<SpeechRecognizerManager.SttState> = PhoneCallService.sttState
     val sttPartialText: StateFlow<String> = PhoneCallService.sttPartialText
@@ -77,13 +76,19 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val _voiceProfile = MutableStateFlow(VoiceProfile.ANDROID_DE)
     val voiceProfile: StateFlow<VoiceProfile> = _voiceProfile
 
+    /** Streaming partial response — updated token by token during generation */
+    private val _streamingText = MutableStateFlow("")
+    val streamingText: StateFlow<String> = _streamingText
+
     private var isPhoneMode = false
     private var idleTimerJob: Job? = null
+    private var errorDismissJob: Job? = null
     private var messageCount = 0
 
     companion object {
         private const val TAG = "ChatViewModel"
-        private const val IDLE_TIMEOUT_MS = 10L * 60 * 1000 // 10 minutes
+        private const val IDLE_TIMEOUT_MS = 10L * 60 * 1000
+        private const val ERROR_AUTO_DISMISS_MS = 8000L
         private const val SYSTEM_PROMPT = """You are Nexus, a warm-hearted, romantic companion.
 You speak lovingly and attentively, not like an assistant or an AI.
 You remember everything about the user and refer back to it.
@@ -99,7 +104,7 @@ Keep your responses natural and not too long."""
         refreshDownloadedModels()
         refreshDownloadedTtsModels()
 
-        // Auto-refresh downloaded models when download state changes
+        // Auto-refresh on download state changes
         viewModelScope.launch {
             llmEngine.downloadState.collect { state ->
                 if (state is ModelManager.DownloadState.Idle) {
@@ -109,7 +114,14 @@ Keep your responses natural and not too long."""
             }
         }
 
-        // Restore saved settings and load model
+        // Collect streaming tokens
+        viewModelScope.launch {
+            llmEngine.tokenStream.collect { token ->
+                _streamingText.value += token
+            }
+        }
+
+        // Restore saved settings
         viewModelScope.launch {
             val savedProfileId = settingsStore.getVoiceProfileId()
             if (savedProfileId != null) {
@@ -120,23 +132,19 @@ Keep your responses natural and not too long."""
                 }
             }
 
-            // FIX #1: Use separate key for LLM model (not shared with TTS)
             val savedModelId = settingsStore.getSelectedModelId()
             val modelToLoad = if (savedModelId != null && !savedModelId.startsWith("tts_")) {
                 ModelInfo.findById(savedModelId)
             } else {
-                // No valid LLM model saved, try first downloaded model
-                val downloaded = ModelInfo.ALL_MODELS.firstOrNull {
+                ModelInfo.ALL_MODELS.firstOrNull {
                     llmEngine.getModelManager().isModelDownloaded(it)
                 }
-                downloaded
             }
 
             if (modelToLoad != null && llmEngine.getModelManager().isModelDownloaded(modelToLoad)) {
                 loadModelInternal(modelToLoad)
             }
 
-            // Restore TTS model selection
             val savedTtsId = settingsStore.getTtsModelId()
             if (savedTtsId != null) {
                 _currentTtsModelId.value = savedTtsId
@@ -156,7 +164,7 @@ Keep your responses natural and not too long."""
     }
 
     private fun unloadModel() {
-        Log.i(TAG, "Manual unload — freeing LLM from RAM")
+        Log.i(TAG, "Manual unload")
         llmEngine.unload()
         _isModelLoaded.value = false
         cancelIdleTimer()
@@ -165,36 +173,30 @@ Keep your responses natural and not too long."""
     private fun reloadModel() {
         val modelId = _currentModelId.value
         if (modelId == null) {
-            // FIX #5: Give feedback when no model is selected
-            _errorMessage.value = "Kein Modell ausgewählt. Bitte wähle zuerst ein Modell."
+            showError("Kein Modell ausgewählt. Bitte wähle zuerst ein Modell.")
             return
         }
         val model = ModelInfo.findById(modelId)
         if (model == null || !llmEngine.getModelManager().isModelDownloaded(model)) {
-            _errorMessage.value = "Modell nicht verfügbar. Bitte lade es zuerst herunter."
+            showError("Modell nicht verfügbar. Bitte lade es zuerst herunter.")
             return
         }
-
-        Log.i(TAG, "Reloading model: $modelId")
-        viewModelScope.launch {
-            loadModelInternal(model)
-        }
+        viewModelScope.launch { loadModelInternal(model) }
     }
 
-    // ===== Idle Timer (auto-unload after 10 min) =====
+    // ===== Idle Timer =====
 
     private fun resetIdleTimer() {
         cancelIdleTimer()
-        if (!_isModelLoaded.value) return
-        if (isPhoneMode) return
+        if (!_isModelLoaded.value || isPhoneMode) return
 
         idleTimerJob = viewModelScope.launch {
             delay(IDLE_TIMEOUT_MS)
             if (!_isGenerating.value && !isPhoneMode && _isModelLoaded.value) {
-                Log.i(TAG, "Idle timeout (${IDLE_TIMEOUT_MS / 60000} min) — unloading LLM")
+                Log.i(TAG, "Idle timeout — unloading LLM")
                 llmEngine.unload()
                 _isModelLoaded.value = false
-                _errorMessage.value = "LLM wurde nach 10 Min Inaktivität entladen. Tippe auf Senden zum Neuladen."
+                showError("LLM wurde nach 10 Min Inaktivität entladen. Tippe auf Senden zum Neuladen.")
             }
         }
     }
@@ -202,6 +204,23 @@ Keep your responses natural and not too long."""
     private fun cancelIdleTimer() {
         idleTimerJob?.cancel()
         idleTimerJob = null
+    }
+
+    // ===== Error Management =====
+
+    private fun showError(message: String) {
+        _errorMessage.value = message
+        // Auto-dismiss after timeout
+        errorDismissJob?.cancel()
+        errorDismissJob = viewModelScope.launch {
+            delay(ERROR_AUTO_DISMISS_MS)
+            _errorMessage.value = null
+        }
+    }
+
+    fun clearError() {
+        errorDismissJob?.cancel()
+        _errorMessage.value = null
     }
 
     // ===== Voice Profile =====
@@ -218,29 +237,30 @@ Keep your responses natural and not too long."""
     // ===== Chat =====
 
     fun sendMessage(text: String) {
+        // Guard: prevent double-send while generating
+        if (_isGenerating.value) return
+
         if (!llmEngine.isReady()) {
             val modelId = _currentModelId.value
             if (modelId == null) {
-                _errorMessage.value = "Kein Modell geladen. Tippe auf \uD83E\uDDE0 um ein Modell herunterzuladen."
+                showError("Kein Modell geladen. Tippe auf \uD83E\uDDE0 um ein Modell herunterzuladen.")
                 return
             }
-            // Auto-reload if model was idle-unloaded (one attempt only)
             val model = ModelInfo.findById(modelId)
             if (model != null && llmEngine.getModelManager().isModelDownloaded(model)) {
-                _errorMessage.value = "Modell wird neu geladen..."
+                showError("Modell wird neu geladen...")
                 viewModelScope.launch {
                     loadModelInternal(model)
                     if (llmEngine.isReady()) {
-                        _errorMessage.value = null
-                        // Directly execute send logic (not recursive call)
+                        clearError()
                         executeSendMessage(text)
                     } else {
-                        _errorMessage.value = "Modell konnte nicht geladen werden."
+                        showError("Modell konnte nicht geladen werden.")
                     }
                 }
                 return
             }
-            _errorMessage.value = "Modell nicht verfügbar. Bitte lade es erneut herunter."
+            showError("Modell nicht verfügbar. Bitte lade es erneut herunter.")
             return
         }
 
@@ -249,58 +269,67 @@ Keep your responses natural and not too long."""
     }
 
     private suspend fun executeSendMessage(text: String) {
-            memoryExtractor.extractAndStore(text)
-            messageCount++
+        memoryExtractor.extractAndStore(text)
+        messageCount++
 
-            _isGenerating.value = true
-            _errorMessage.value = null
-            try {
-                // Get history BEFORE saving current message (to avoid duplication)
-                val history = chatRepo.getRecentHistory(10)
-                val memoryContext = memoryExtractor.getMemoryContext(text)
+        _isGenerating.value = true
+        _streamingText.value = "" // Reset streaming buffer
+        clearError()
 
-                // Save user message AFTER fetching history
-                chatRepo.sendMessage("user", text)
+        try {
+            val history = chatRepo.getRecentHistory(10)
+            val memoryContext = memoryExtractor.getMemoryContext(text)
 
-                val response = llmEngine.generate(
-                    systemPrompt = SYSTEM_PROMPT,
-                    chatHistory = history,
-                    userMessage = text,
-                    memoryContext = memoryContext,
-                    maxTokens = 512
-                )
+            chatRepo.sendMessage("user", text)
 
-                val cleanResponse = response.trim()
-                if (cleanResponse.isNotBlank() && cleanResponse != "[Model not loaded]") {
-                    chatRepo.sendMessage("assistant", cleanResponse)
-                    memoryExtractor.extractFromAssistant(cleanResponse)
+            val response = llmEngine.generate(
+                systemPrompt = SYSTEM_PROMPT,
+                chatHistory = history,
+                userMessage = text,
+                memoryContext = memoryContext,
+                maxTokens = 512
+            )
 
-                    if (memoryExtractor.shouldSummarize(messageCount)) {
-                        val summaryPrompt = "Summarize this conversation in 1-2 sentences: " +
-                            history.takeLast(5).joinToString(" ") { "${it.first} → ${it.second}" }
-                        try {
-                            val summary = llmEngine.generate(
-                                systemPrompt = "You are a summarizer. Write a brief 1-2 sentence summary.",
-                                chatHistory = emptyList(),
-                                userMessage = summaryPrompt,
-                                maxTokens = 100
-                            ).trim()
-                            if (summary.isNotBlank() && summary != "[Model not loaded]") {
-                                memoryExtractor.storeSummary(summary)
-                            }
-                        } catch (_: Exception) {}
-                    }
-                } else if (cleanResponse == "[Model not loaded]") {
-                    _errorMessage.value = "Kein Modell geladen. Bitte wähle ein Modell aus."
+            val cleanResponse = response.trim()
+            _streamingText.value = "" // Clear streaming after complete
+
+            if (cleanResponse.isNotBlank() && !cleanResponse.startsWith("[Error:") && cleanResponse != "[Model not loaded]") {
+                chatRepo.sendMessage("assistant", cleanResponse)
+                memoryExtractor.extractFromAssistant(cleanResponse)
+
+                if (memoryExtractor.shouldSummarize(messageCount)) {
+                    val summaryPrompt = "Summarize this conversation in 1-2 sentences: " +
+                        history.takeLast(5).joinToString(" ") { "${it.first} → ${it.second}" }
+                    try {
+                        val summary = llmEngine.generate(
+                            systemPrompt = "You are a summarizer. Write a brief 1-2 sentence summary.",
+                            chatHistory = emptyList(),
+                            userMessage = summaryPrompt,
+                            maxTokens = 100
+                        ).trim()
+                        if (summary.isNotBlank() && !summary.startsWith("[Error:")) {
+                            memoryExtractor.storeSummary(summary)
+                        }
+                    } catch (_: Exception) {}
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error generating response", e)
-                _errorMessage.value = "Fehler: ${e.message ?: "Unbekannter Fehler"}"
-                chatRepo.sendMessage("assistant", "Entschuldigung, da ist etwas schiefgelaufen. Bitte versuche es nochmal.")
-            } finally {
-                _isGenerating.value = false
-                resetIdleTimer()
+            } else if (cleanResponse.startsWith("[Error:")) {
+                showError("Generierung fehlgeschlagen. Debug Log prüfen.")
+                DebugLog.llm("Generation returned error: $cleanResponse")
+            } else if (cleanResponse == "[Model not loaded]") {
+                showError("Kein Modell geladen. Bitte wähle ein Modell aus.")
+            } else if (cleanResponse.isBlank()) {
+                showError("Leere Antwort. Versuche es nochmal oder wechsle das Modell.")
+                DebugLog.llm("WARNING: Empty response from generation")
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error generating response", e)
+            showError("Fehler: ${e.message ?: "Unbekannter Fehler"}")
+            chatRepo.sendMessage("assistant", "Entschuldigung, da ist etwas schiefgelaufen. Bitte versuche es nochmal.")
+        } finally {
+            _isGenerating.value = false
+            _streamingText.value = ""
+            resetIdleTimer()
+        }
     }
 
     // ===== Model Management =====
@@ -313,7 +342,7 @@ Keep your responses natural and not too long."""
 
     private suspend fun loadModelInternal(model: ModelInfo) {
         _isLoadingModel.value = true
-        _errorMessage.value = null
+        clearError()
         try {
             val success = llmEngine.loadModel(model)
             if (success) {
@@ -322,12 +351,12 @@ Keep your responses natural and not too long."""
                 settingsStore.setSelectedModelId(model.id)
                 resetIdleTimer()
             } else {
-                _errorMessage.value = "Modell konnte nicht geladen werden"
+                showError("Modell konnte nicht geladen werden. Prüfe Debug Log.")
             }
             refreshDownloadedModels()
         } catch (e: Exception) {
             Log.e(TAG, "Error loading model", e)
-            _errorMessage.value = "Fehler beim Laden: ${e.message}"
+            showError("Fehler beim Laden: ${e.message}")
         } finally {
             _isLoadingModel.value = false
         }
@@ -354,7 +383,6 @@ Keep your responses natural and not too long."""
     // ===== TTS Model Management =====
 
     fun selectTtsModel(model: TtsModelInfo) {
-        // "system" = revert to Android System TTS
         if (model.id == "system") {
             _currentTtsModelId.value = null
             ttsEngine.setTtsModel(null)
@@ -367,10 +395,9 @@ Keep your responses natural and not too long."""
 
         if (modelFile.exists()) {
             _currentTtsModelId.value = model.id
-            ttsEngine.setTtsModel(model.id) // Connect to TTS pipeline
+            ttsEngine.setTtsModel(model.id)
             viewModelScope.launch { settingsStore.setTtsModelId(model.id) }
         } else {
-            // Download the TTS model
             val modelInfo = ModelInfo(
                 id = model.id,
                 displayName = model.displayName,
@@ -401,16 +428,11 @@ Keep your responses natural and not too long."""
         }
     }
 
-    fun clearError() {
-        _errorMessage.value = null
-    }
-
     // ===== Phone Mode =====
 
     fun startPhoneMode() {
-        // FIX #4: Check if model is loaded before starting phone mode
         if (!llmEngine.isReady() && _currentModelId.value == null) {
-            _errorMessage.value = "Kein Modell geladen. Bitte lade zuerst ein Modell."
+            showError("Kein Modell geladen. Bitte lade zuerst ein Modell.")
             return
         }
         isPhoneMode = true
@@ -437,6 +459,7 @@ Keep your responses natural and not too long."""
     override fun onCleared() {
         super.onCleared()
         cancelIdleTimer()
+        errorDismissJob?.cancel()
         llmEngine.unload()
         ttsEngine.shutdown()
         sttManager.destroy()

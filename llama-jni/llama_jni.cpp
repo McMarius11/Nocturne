@@ -29,6 +29,9 @@ static bool                          g_backend_initialized = false;
 static llama_pos                     g_system_prompt_pos = 0;
 static llama_pos                     g_current_pos = 0;
 
+// Last error message for detailed reporting
+static std::string                   g_last_error;
+
 // Constants
 constexpr int BATCH_SIZE = 512;
 constexpr int OVERFLOW_HEADROOM = 4;
@@ -65,7 +68,8 @@ static void reset_state(bool clear_kv = true) {
 
 static void shift_context() {
     int n_discard = (g_current_pos - g_system_prompt_pos) / 2;
-    LOGI("Shifting context: discarding %d tokens", n_discard);
+    LOGI("Shifting context: discarding %d tokens (pos %d → %d)",
+         n_discard, g_current_pos, g_current_pos - n_discard);
     llama_memory_seq_rm(llama_get_memory(g_context), 0,
                         g_system_prompt_pos, g_system_prompt_pos + n_discard);
     llama_memory_seq_add(llama_get_memory(g_context), 0,
@@ -74,7 +78,6 @@ static void shift_context() {
 }
 
 static int decode_in_batches(const std::vector<llama_token> &tokens, llama_pos start_pos, bool logit_last = false) {
-    // Safety: truncate if prompt exceeds context
     int n_tokens = (int)tokens.size();
     int max_tokens = g_n_ctx - OVERFLOW_HEADROOM;
     if (n_tokens > max_tokens) {
@@ -83,6 +86,7 @@ static int decode_in_batches(const std::vector<llama_token> &tokens, llama_pos s
     }
 
     for (int i = 0; i < n_tokens; i += BATCH_SIZE) {
+        if (g_abort) return 2; // abort code
         int cur_size = std::min(n_tokens - i, BATCH_SIZE);
         common_batch_clear(g_batch);
 
@@ -109,6 +113,7 @@ Java_com_nexus_companion_llm_LlamaJni_loadModel(
     jstring modelPath, jint nThreads, jint contextLength
 ) {
     std::lock_guard<std::mutex> lock(g_mutex);
+    g_last_error.clear();
 
     // Free previous
     if (g_sampler) { common_sampler_free(g_sampler); g_sampler = nullptr; }
@@ -128,7 +133,16 @@ Java_com_nexus_companion_llm_LlamaJni_loadModel(
     }
 
     const char *path = env->GetStringUTFChars(modelPath, nullptr);
-    LOGI("Loading model: %s", path);
+    LOGI("Loading model: %s (ctx=%d, threads=%d)", path, contextLength, nThreads);
+
+    // Check file accessible
+    if (access(path, R_OK) != 0) {
+        g_last_error = "Model file not readable: ";
+        g_last_error += path;
+        LOGE("%s", g_last_error.c_str());
+        env->ReleaseStringUTFChars(modelPath, path);
+        return JNI_FALSE;
+    }
 
     // Load model
     auto model_params = llama_model_default_params();
@@ -136,7 +150,8 @@ Java_com_nexus_companion_llm_LlamaJni_loadModel(
     env->ReleaseStringUTFChars(modelPath, path);
 
     if (!g_model) {
-        LOGE("Failed to load model");
+        g_last_error = "llama_model_load_from_file failed (OOM or incompatible GGUF)";
+        LOGE("%s", g_last_error.c_str());
         return JNI_FALSE;
     }
 
@@ -153,7 +168,8 @@ Java_com_nexus_companion_llm_LlamaJni_loadModel(
 
     g_context = llama_init_from_model(g_model, ctx_params);
     if (!g_context) {
-        LOGE("Failed to create context");
+        g_last_error = "llama_init_from_model failed (not enough RAM for context)";
+        LOGE("%s", g_last_error.c_str());
         llama_model_free(g_model);
         g_model = nullptr;
         return JNI_FALSE;
@@ -162,13 +178,27 @@ Java_com_nexus_companion_llm_LlamaJni_loadModel(
     // Initialize batch
     g_batch = llama_batch_init(BATCH_SIZE, 0, 1);
 
-    // Initialize sampler
+    // Initialize sampler with good defaults
     common_params_sampling sparams;
     sparams.temp = 0.7f;
     sparams.top_p = 0.9f;
+    sparams.top_k = 40;
+    sparams.penalty_repeat = 1.1f;
     g_sampler = common_sampler_init(g_model, sparams);
 
-    LOGI("Model loaded: ctx=%d, threads=%d", g_n_ctx, threads);
+    if (!g_sampler) {
+        g_last_error = "common_sampler_init failed";
+        LOGE("%s", g_last_error.c_str());
+        llama_batch_free(g_batch);
+        llama_free(g_context);
+        g_context = nullptr;
+        llama_model_free(g_model);
+        g_model = nullptr;
+        return JNI_FALSE;
+    }
+
+    LOGI("Model loaded OK: ctx=%d, threads=%d, vocab=%d",
+         g_n_ctx, threads, llama_vocab_n_tokens(llama_model_get_vocab(g_model)));
     return JNI_TRUE;
 }
 
@@ -179,8 +209,10 @@ Java_com_nexus_companion_llm_LlamaJni_generate(
 ) {
     std::lock_guard<std::mutex> lock(g_mutex);
     g_abort = false;
+    g_last_error.clear();
 
     if (!g_model || !g_context || !g_sampler) {
+        g_last_error = "Model not loaded";
         return env->NewStringUTF("[Error: Model not loaded]");
     }
 
@@ -190,42 +222,75 @@ Java_com_nexus_companion_llm_LlamaJni_generate(
 
     // Reset state for fresh generation
     reset_state(true);
+    common_sampler_reset(g_sampler);
 
-    // The prompt is already formatted by the Kotlin layer (LlmEngine.buildPrompt).
-    // IMPORTANT: add_special=false because Gemma 3 GGUF has add_bos_token=true in metadata,
-    // so llama.cpp auto-adds BOS. Setting add_special=true would duplicate it → broken output.
-    // parse_special=true interprets <start_of_turn> etc. as special tokens (required for Gemma 3).
+    // Tokenize the prompt.
+    // add_special=false: most GGUFs have add_bos_token=true in metadata,
+    //   llama.cpp auto-adds BOS. Setting add_special=true duplicates it → broken output.
+    // parse_special=true: interprets <start_of_turn>, <|im_start|> etc. as special tokens.
     auto tokens = common_tokenize(g_context, promptCpp, false, true);
-    LOGI("Prompt tokenized: %d tokens (prompt length: %d chars)", (int)tokens.size(), (int)promptCpp.size());
+    LOGI("Tokenized: %d tokens from %d chars", (int)tokens.size(), (int)promptCpp.size());
 
     if (tokens.empty()) {
+        g_last_error = "Empty prompt after tokenization";
+        LOGE("Empty prompt after tokenization (input was %d chars)", (int)promptCpp.size());
         return env->NewStringUTF("[Error: Empty prompt after tokenization]");
     }
 
+    if ((int)tokens.size() >= g_n_ctx - OVERFLOW_HEADROOM) {
+        LOGI("WARNING: Prompt (%d tokens) fills context (%d). Truncating.", (int)tokens.size(), g_n_ctx);
+    }
+
+    // Log first few tokens for debugging
+    {
+        std::string tok_debug;
+        int n_show = std::min((int)tokens.size(), 8);
+        for (int i = 0; i < n_show; i++) {
+            tok_debug += std::to_string(tokens[i]);
+            if (i < n_show - 1) tok_debug += ",";
+        }
+        if ((int)tokens.size() > n_show) tok_debug += "...";
+        LOGI("First tokens: [%s]", tok_debug.c_str());
+    }
+
     // Decode prompt tokens
-    if (decode_in_batches(tokens, 0, true)) {
+    const auto decode_start = ggml_time_us();
+    int decode_result = decode_in_batches(tokens, 0, true);
+    const auto decode_ms = (ggml_time_us() - decode_start) / 1000;
+
+    if (decode_result == 2) {
+        // Aborted
+        return env->NewStringUTF("");
+    }
+    if (decode_result != 0) {
+        g_last_error = "llama_decode failed during prompt processing";
         return env->NewStringUTF("[Error: Failed to process prompt]");
     }
+
     g_current_pos = (int)tokens.size();
+    LOGI("Prompt decoded in %lld ms (%d tokens, %.1f t/s)",
+         (long long)decode_ms, (int)tokens.size(),
+         decode_ms > 0 ? (tokens.size() * 1000.0 / decode_ms) : 0.0);
 
     // Generate tokens
     std::string result;
     std::string cached_chars;
     const auto *vocab = llama_model_get_vocab(g_model);
     const auto gen_start = ggml_time_us();
-    const int64_t GEN_TIMEOUT_US = 30 * 1000000LL; // 30 second timeout
-    bool first_token_logged = false;
+    const int64_t GEN_TIMEOUT_US = 60 * 1000000LL; // 60 second timeout (was 30s)
+    int tokens_generated = 0;
 
     for (int i = 0; i < maxTokens && !g_abort; i++) {
         // Timeout safety
         if (ggml_time_us() - gen_start > GEN_TIMEOUT_US) {
             LOGI("Generation timeout after %d tokens (%.1f seconds)",
                  i, (double)(ggml_time_us() - gen_start) / 1000000.0);
+            g_last_error = "Generation timeout (60s)";
             break;
         }
         // Check context overflow
         if (g_current_pos >= g_n_ctx - OVERFLOW_HEADROOM) {
-            LOGI("Context full during generation, shifting...");
+            LOGI("Context full at pos %d, shifting...", g_current_pos);
             shift_context();
         }
 
@@ -233,15 +298,14 @@ Java_com_nexus_companion_llm_LlamaJni_generate(
         auto new_token = common_sampler_sample(g_sampler, g_context, -1);
         common_sampler_accept(g_sampler, new_token, true);
 
-        if (!first_token_logged) {
-            LOGI("First token sampled: id=%d (%.1f ms after start)",
-                 new_token, (double)(ggml_time_us() - gen_start) / 1000.0);
-            first_token_logged = true;
+        if (tokens_generated == 0) {
+            auto first_tok_ms = (ggml_time_us() - gen_start) / 1000;
+            LOGI("First token: id=%d latency=%lld ms", new_token, (long long)first_tok_ms);
         }
 
         // Check EOG
         if (llama_vocab_is_eog(vocab, new_token)) {
-            LOGD("EOG token at position %d", i);
+            LOGD("EOG at token %d", i);
             break;
         }
 
@@ -255,11 +319,14 @@ Java_com_nexus_companion_llm_LlamaJni_generate(
             cached_chars.clear();
         }
 
+        tokens_generated++;
+
         // Decode the new token for next iteration
         common_batch_clear(g_batch);
         common_batch_add(g_batch, new_token, g_current_pos, {0}, true);
         if (llama_decode(g_context, g_batch) != 0) {
-            LOGE("llama_decode failed during generation at step %d", i);
+            LOGE("llama_decode failed during generation at token %d", i);
+            g_last_error = "Decode failed during generation";
             break;
         }
         g_current_pos++;
@@ -270,7 +337,145 @@ Java_com_nexus_companion_llm_LlamaJni_generate(
         result += cached_chars;
     }
 
-    LOGI("Generated %d chars", (int)result.size());
+    auto gen_ms = (ggml_time_us() - gen_start) / 1000;
+    double tok_per_sec = gen_ms > 0 ? (tokens_generated * 1000.0 / gen_ms) : 0.0;
+    LOGI("Generated %d tokens (%d chars) in %lld ms (%.1f t/s)%s",
+         tokens_generated, (int)result.size(), (long long)gen_ms, tok_per_sec,
+         g_abort ? " [ABORTED]" : "");
+
+    return env->NewStringUTF(result.c_str());
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_nexus_companion_llm_LlamaJni_generateStreaming(
+    JNIEnv *env, jobject obj,
+    jstring prompt, jint maxTokens, jobject callback
+) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    g_abort = false;
+    g_last_error.clear();
+
+    if (!g_model || !g_context || !g_sampler) {
+        g_last_error = "Model not loaded";
+        return env->NewStringUTF("[Error: Model not loaded]");
+    }
+
+    // Get callback method
+    jclass callbackClass = env->GetObjectClass(callback);
+    jmethodID onTokenMethod = env->GetMethodID(callbackClass, "onToken", "(Ljava/lang/String;)V");
+    if (!onTokenMethod) {
+        LOGE("Callback method onToken(String) not found");
+        return env->NewStringUTF("[Error: Invalid callback]");
+    }
+
+    const char *promptStr = env->GetStringUTFChars(prompt, nullptr);
+    std::string promptCpp(promptStr);
+    env->ReleaseStringUTFChars(prompt, promptStr);
+
+    // Reset state
+    reset_state(true);
+    common_sampler_reset(g_sampler);
+
+    auto tokens = common_tokenize(g_context, promptCpp, false, true);
+    LOGI("Streaming: %d tokens from %d chars", (int)tokens.size(), (int)promptCpp.size());
+
+    if (tokens.empty()) {
+        g_last_error = "Empty prompt after tokenization";
+        return env->NewStringUTF("[Error: Empty prompt after tokenization]");
+    }
+
+    // Log first tokens
+    {
+        std::string tok_debug;
+        int n_show = std::min((int)tokens.size(), 8);
+        for (int i = 0; i < n_show; i++) {
+            tok_debug += std::to_string(tokens[i]);
+            if (i < n_show - 1) tok_debug += ",";
+        }
+        LOGI("First tokens: [%s]", tok_debug.c_str());
+    }
+
+    // Decode prompt
+    const auto decode_start = ggml_time_us();
+    int decode_result = decode_in_batches(tokens, 0, true);
+    auto decode_ms = (ggml_time_us() - decode_start) / 1000;
+
+    if (decode_result == 2) return env->NewStringUTF("");
+    if (decode_result != 0) {
+        g_last_error = "Decode failed during prompt processing";
+        return env->NewStringUTF("[Error: Failed to process prompt]");
+    }
+
+    g_current_pos = (int)tokens.size();
+    LOGI("Prompt decoded: %lld ms (%.1f t/s)",
+         (long long)decode_ms,
+         decode_ms > 0 ? (tokens.size() * 1000.0 / decode_ms) : 0.0);
+
+    // Generate with streaming
+    std::string result;
+    std::string cached_chars;
+    const auto *vocab = llama_model_get_vocab(g_model);
+    const auto gen_start = ggml_time_us();
+    const int64_t GEN_TIMEOUT_US = 60 * 1000000LL;
+    int tokens_generated = 0;
+
+    for (int i = 0; i < maxTokens && !g_abort; i++) {
+        if (ggml_time_us() - gen_start > GEN_TIMEOUT_US) {
+            LOGI("Streaming timeout after %d tokens", i);
+            break;
+        }
+        if (g_current_pos >= g_n_ctx - OVERFLOW_HEADROOM) {
+            shift_context();
+        }
+
+        auto new_token = common_sampler_sample(g_sampler, g_context, -1);
+        common_sampler_accept(g_sampler, new_token, true);
+
+        if (tokens_generated == 0) {
+            auto first_tok_ms = (ggml_time_us() - gen_start) / 1000;
+            LOGI("First token: id=%d latency=%lld ms", new_token, (long long)first_tok_ms);
+        }
+
+        if (llama_vocab_is_eog(vocab, new_token)) {
+            LOGD("EOG at token %d", i);
+            break;
+        }
+
+        auto piece = common_token_to_piece(g_context, new_token);
+        cached_chars += piece;
+
+        if (is_valid_utf8(cached_chars.c_str())) {
+            result += cached_chars;
+            // Stream each valid UTF-8 chunk to Kotlin
+            jstring jPiece = env->NewStringUTF(cached_chars.c_str());
+            env->CallVoidMethod(callback, onTokenMethod, jPiece);
+            env->DeleteLocalRef(jPiece);
+            cached_chars.clear();
+        }
+
+        tokens_generated++;
+
+        common_batch_clear(g_batch);
+        common_batch_add(g_batch, new_token, g_current_pos, {0}, true);
+        if (llama_decode(g_context, g_batch) != 0) {
+            LOGE("Decode failed at generation token %d", i);
+            break;
+        }
+        g_current_pos++;
+    }
+
+    if (!cached_chars.empty() && is_valid_utf8(cached_chars.c_str())) {
+        result += cached_chars;
+        jstring jPiece = env->NewStringUTF(cached_chars.c_str());
+        env->CallVoidMethod(callback, onTokenMethod, jPiece);
+        env->DeleteLocalRef(jPiece);
+    }
+
+    auto gen_ms = (ggml_time_us() - gen_start) / 1000;
+    double tok_per_sec = gen_ms > 0 ? (tokens_generated * 1000.0 / gen_ms) : 0.0;
+    LOGI("Streamed %d tokens (%d chars) in %lld ms (%.1f t/s)",
+         tokens_generated, (int)result.size(), (long long)gen_ms, tok_per_sec);
+
     return env->NewStringUTF(result.c_str());
 }
 
@@ -300,6 +505,24 @@ Java_com_nexus_companion_llm_LlamaJni_unloadModel(JNIEnv *, jobject) {
 JNIEXPORT jboolean JNICALL
 Java_com_nexus_companion_llm_LlamaJni_isModelLoaded(JNIEnv *, jobject) {
     return (g_model && g_context) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_nexus_companion_llm_LlamaJni_getLastError(JNIEnv *env, jobject) {
+    return env->NewStringUTF(g_last_error.c_str());
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_nexus_companion_llm_LlamaJni_getModelInfo(JNIEnv *env, jobject) {
+    if (!g_model || !g_context) {
+        return env->NewStringUTF("No model loaded");
+    }
+    const auto *vocab = llama_model_get_vocab(g_model);
+    std::string info;
+    info += "ctx=" + std::to_string(g_n_ctx);
+    info += " vocab=" + std::to_string(llama_vocab_n_tokens(vocab));
+    info += " pos=" + std::to_string(g_current_pos);
+    return env->NewStringUTF(info.c_str());
 }
 
 } // extern "C"

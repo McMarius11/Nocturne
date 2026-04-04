@@ -9,8 +9,8 @@ import org.junit.Test
 class ModelInfoTest {
 
     @Test
-    fun allModelsContainsFiveModels() {
-        assertEquals(5, ModelInfo.ALL_MODELS.size)
+    fun allModelsContainsFourModels() {
+        assertEquals(4, ModelInfo.ALL_MODELS.size)
     }
 
     @Test
@@ -61,10 +61,11 @@ class ModelInfoTest {
     }
 
     @Test
-    fun gemmaModelUsesGemmaFormat() {
-        val gemma = ModelInfo.findById("gemma-2b")
+    fun gemma4ModelUsesGemmaFormat() {
+        val gemma = ModelInfo.findById("gemma4-e4b-uncensored")
         assertNotNull(gemma)
-        assertEquals(PromptFormat.GEMMA2, gemma!!.promptFormat)
+        assertEquals(PromptFormat.GEMMA, gemma!!.promptFormat)
+        assertTrue(gemma.sizeGb >= 4.0f)
     }
 
     @Test
@@ -75,19 +76,18 @@ class ModelInfoTest {
     }
 
     @Test
-    fun gemma3HereticModelExists() {
-        val model = ModelInfo.findById("gemma3-4b-heretic")
-        assertNotNull(model)
-        assertEquals(PromptFormat.GEMMA3, model!!.promptFormat)
-        assertTrue(model.sizeGb < 3.0f)
-    }
-
-    @Test
     fun qwen3AbliteratedModelExists() {
         val model = ModelInfo.findById("qwen3-4b-abliterated")
         assertNotNull(model)
         assertEquals(PromptFormat.CHATML, model!!.promptFormat)
         assertTrue(model.sizeGb < 3.0f)
+    }
+
+    @Test
+    fun allModelsHaveContextLength() {
+        ModelInfo.ALL_MODELS.forEach { model ->
+            assertTrue("${model.id} contextLength should be > 0", model.contextLength > 0)
+        }
     }
 
     @Test

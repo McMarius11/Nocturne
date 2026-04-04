@@ -3,7 +3,8 @@ package com.nexus.companion.llm
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -13,8 +14,6 @@ class LlmEngine(private val context: Context) {
     companion object {
         private const val TAG = "LlmEngine"
 
-        // Singleton — the JNI layer uses global statics, so only one
-        // LlmEngine should exist. PhoneCallService reuses this instance.
         @Volatile
         private var INSTANCE: LlmEngine? = null
 
@@ -30,6 +29,10 @@ class LlmEngine(private val context: Context) {
 
     private var currentModel: ModelInfo? = null
 
+    /** Emits each token as it's generated — observe for streaming UI */
+    private val _tokenStream = MutableSharedFlow<String>(extraBufferCapacity = 64)
+    val tokenStream: SharedFlow<String> = _tokenStream
+
     val downloadState get() = modelManager.downloadProgress
 
     fun isReady(): Boolean = jni.isModelLoaded()
@@ -40,12 +43,10 @@ class LlmEngine(private val context: Context) {
 
     suspend fun loadModel(model: ModelInfo): Boolean = withContext(Dispatchers.IO) {
         try {
-            // Download if not present (via ForegroundService with WakeLock)
             if (!modelManager.isModelDownloaded(model)) {
                 val started = modelManager.startDownload(model)
                 if (!started) return@withContext false
 
-                // Wait for download to complete
                 modelManager.downloadProgress.first { state ->
                     state is ModelManager.DownloadState.Idle || state is ModelManager.DownloadState.Error
                 }
@@ -63,32 +64,39 @@ class LlmEngine(private val context: Context) {
             }
 
             val path = modelManager.getModelPath(model).absolutePath
-            // Gemma 3 / Qwen3 support 8192 context, smaller models use 4096
-            val contextLength = if (model.sizeBytes > 2_000_000_000L) 8192 else 4096
+            val contextLength = model.contextLength
             DebugLog.llm("Loading ${model.displayName} (${model.sizeGb} GB, ctx=$contextLength)")
             val loadStart = System.currentTimeMillis()
             val success = jni.loadModel(
                 modelPath = path,
-                nThreads = 4,  // Tensor G4 optimized
+                nThreads = 4,
                 contextLength = contextLength
             )
             val loadMs = System.currentTimeMillis() - loadStart
             if (success) {
                 currentModel = model
-                DebugLog.llm("Model loaded in ${loadMs}ms")
+                val info = jni.getModelInfo()
+                DebugLog.llm("Model loaded in ${loadMs}ms ($info)")
             } else {
-                DebugLog.llm("Model load FAILED after ${loadMs}ms")
+                val error = jni.getLastError()
+                DebugLog.llm("Model load FAILED after ${loadMs}ms: $error")
             }
             success
         } catch (e: UnsatisfiedLinkError) {
             Log.e(TAG, "Native library not available", e)
+            DebugLog.llm("FATAL: Native library not found")
             false
         } catch (e: Exception) {
             Log.e(TAG, "Error loading model", e)
+            DebugLog.llm("Load error: ${e.message}")
             false
         }
     }
 
+    /**
+     * Generate a response with streaming tokens.
+     * Each token is emitted to [tokenStream] as it's generated.
+     */
     suspend fun generate(
         systemPrompt: String,
         chatHistory: List<Pair<String, String>>,
@@ -96,19 +104,40 @@ class LlmEngine(private val context: Context) {
         memoryContext: String = "",
         maxTokens: Int = 512
     ): String = withContext(Dispatchers.IO) {
-        if (!jni.isModelLoaded()) return@withContext "[Model not loaded]"
+        if (!jni.isModelLoaded()) {
+            DebugLog.llm("Generate called but model not loaded!")
+            return@withContext "[Model not loaded]"
+        }
 
         try {
             val format = currentModel?.promptFormat ?: PromptFormat.ALPACA
             val prompt = buildPrompt(format, systemPrompt, chatHistory, userMessage, memoryContext)
             DebugLog.llm("Generate: ${prompt.length} chars, format=$format, maxTokens=$maxTokens")
+            DebugLog.llm("Prompt preview: ${prompt.takeLast(200)}")
+
             val genStart = System.currentTimeMillis()
-            val result = jni.generate(prompt, maxTokens)
+
+            // Use streaming generation
+            val callback = object : LlamaJni.TokenCallback {
+                override fun onToken(token: String) {
+                    _tokenStream.tryEmit(token)
+                }
+            }
+
+            val result = jni.generateStreaming(prompt, maxTokens, callback)
             val genMs = System.currentTimeMillis() - genStart
-            DebugLog.llm("Response: ${result.length} chars in ${genMs}ms")
+
+            if (result.startsWith("[Error:")) {
+                val nativeError = jni.getLastError()
+                DebugLog.llm("Generation error: $result (native: $nativeError)")
+            } else {
+                DebugLog.llm("Response: ${result.length} chars in ${genMs}ms")
+            }
+
             result
         } catch (e: Exception) {
             Log.e(TAG, "Error during generation", e)
+            DebugLog.llm("Generation exception: ${e.message}")
             throw e
         }
     }
@@ -121,8 +150,7 @@ class LlmEngine(private val context: Context) {
         memoryContext: String
     ): String = when (format) {
         PromptFormat.ALPACA -> buildAlpacaPrompt(systemPrompt, history, userMessage, memoryContext)
-        PromptFormat.GEMMA2 -> buildGemma2Prompt(systemPrompt, history, userMessage, memoryContext)
-        PromptFormat.GEMMA3 -> buildGemma3Prompt(systemPrompt, history, userMessage, memoryContext)
+        PromptFormat.GEMMA -> buildGemmaPrompt(systemPrompt, history, userMessage, memoryContext)
         PromptFormat.CHATML -> buildChatMlPrompt(systemPrompt, history, userMessage, memoryContext)
     }
 
@@ -152,7 +180,11 @@ class LlmEngine(private val context: Context) {
         return sb.toString()
     }
 
-    private fun buildGemma2Prompt(
+    /**
+     * Gemma 3/4 prompt format.
+     * Uses <start_of_turn>/<end_of_turn> with system, user, model roles.
+     */
+    private fun buildGemmaPrompt(
         systemPrompt: String,
         history: List<Pair<String, String>>,
         userMessage: String,
@@ -160,25 +192,6 @@ class LlmEngine(private val context: Context) {
     ): String {
         val sb = StringBuilder()
         val system = buildSystemBlock(systemPrompt, memoryContext)
-        // Gemma 2 has no system turn — inject system prompt into first user turn
-        for ((user, assistant) in history.takeLast(10)) {
-            sb.append("<start_of_turn>user\n$user<end_of_turn>\n")
-            sb.append("<start_of_turn>model\n$assistant<end_of_turn>\n")
-        }
-        sb.append("<start_of_turn>user\n$system\n\n$userMessage<end_of_turn>\n")
-        sb.append("<start_of_turn>model\n")
-        return sb.toString()
-    }
-
-    private fun buildGemma3Prompt(
-        systemPrompt: String,
-        history: List<Pair<String, String>>,
-        userMessage: String,
-        memoryContext: String
-    ): String {
-        val sb = StringBuilder()
-        val system = buildSystemBlock(systemPrompt, memoryContext)
-        // Gemma 3 supports a dedicated system turn
         sb.append("<start_of_turn>system\n$system<end_of_turn>\n")
         for ((user, assistant) in history.takeLast(10)) {
             sb.append("<start_of_turn>user\n$user<end_of_turn>\n")
@@ -212,15 +225,10 @@ class LlmEngine(private val context: Context) {
         jni.abort()
     }
 
-    /**
-     * Unload model from RAM. Aborts any in-flight generation first,
-     * then unloads on IO thread to prevent ANR on main thread.
-     */
     fun unload() {
         DebugLog.llm("Unloading model (abort + free)")
-        jni.abort() // Signal generation to stop (non-blocking)
+        jni.abort()
         currentModel = null
-        // Unload on IO thread — JNI mutex would block main thread
         kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 jni.unloadModel()

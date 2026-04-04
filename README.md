@@ -5,8 +5,9 @@ A fully offline, on-device AI companion app for Android. Chat and talk with your
 ## Features
 
 ### Chat Mode
-- On-device LLM inference via [llama.cpp](https://github.com/ggerganov/llama.cpp)
-- 5 downloadable models (1.6–7.9 GB), from lightweight to high quality
+- On-device LLM inference via [llama.cpp](https://github.com/ggml-org/llama.cpp)
+- 4 downloadable models (2.7–7.9 GB), from compact to high quality
+- **Streaming text** — tokens appear in real-time as they're generated
 - Bilingual: German + English (responds in your language automatically)
 - Persistent memory system (remembers your name, preferences, mood)
 - Conversation summaries for long-term context
@@ -39,11 +40,10 @@ A fully offline, on-device AI companion app for Android. Chat and talk with your
 
 | Model | Size | Type | Description |
 |-------|------|------|-------------|
-| **Gemma 3 4B Heretic** | 2.5 GB | Abliterated | Uncensored, multilingual — recommended |
-| **Qwen3 4B Abliterated** | 2.7 GB | Abliterated | Thinking mode, uncensored |
+| **Gemma 4 E4B** | 5.0 GB | Abliterated | **Recommended** — Gemma 4, uncensored, 128K context, multilingual |
+| **Qwen3 4B Abliterated** | 2.7 GB | Abliterated | Thinking mode, uncensored, compact |
 | **Noromaid 7B** | 5.1 GB | Roleplay | Warm and romantic |
 | **MythoMax 13B** | 7.9 GB | Roleplay | Best quality, expressive |
-| **Gemma 2B** | 1.6 GB | General | Battery saver, lightweight |
 
 All models are GGUF Q4_K_M quantized and downloaded by the user at runtime from HuggingFace. The app does not bundle any AI models.
 
@@ -114,7 +114,7 @@ Memory is stored in a local Room database and persists across app restarts.
 │  ├── llama_jni.cpp  (LLM inference)         │
 │  └── tts_jni.cpp    (TTS, prepared)         │
 ├─────────────────────────────────────────────┤
-│  llama.cpp (pinned to tag b8508)            │
+│  llama.cpp (pinned to tag b8648)            │
 │  ├── common (sampler, tokenizer, batch)     │
 │  ├── KleidiAI (ARM NEON/SVE)               │
 │  └── OpenMP (multi-threaded GEMM)           │
@@ -132,7 +132,7 @@ Memory is stored in a local Room database and persists across app restarts.
 | **Offline** | No (cloud-based) | **Yes (100% on-device)** |
 | **Privacy** | E2E encrypted, but cloud | **Nothing leaves device** |
 | **Multilingual** | English only | **German + English** |
-| **Model choice** | Fixed (Maya/Miles) | **5 models, user's choice** |
+| **Model choice** | Fixed (Maya/Miles) | **4 models, user's choice** |
 | **Cost** | Will be paid subscription | **Free, open source** |
 | **Uncensored** | No | **Yes (abliterated models)** |
 | **Open source** | No | **Apache 2.0** |
@@ -149,8 +149,8 @@ Memory is stored in a local Room database and persists across app restarts.
 git clone https://github.com/McMarius11/Nocturne.git
 cd Nocturne
 mkdir -p external
-git clone --depth 1 --branch b8508 \
-  https://github.com/ggerganov/llama.cpp.git external/llama.cpp
+git clone --depth 1 --branch b8648 \
+  https://github.com/ggml-org/llama.cpp.git external/llama.cpp
 
 echo "sdk.dir=$ANDROID_HOME" > local.properties
 ./gradlew assembleDebug
@@ -162,7 +162,7 @@ APK: `app/build/outputs/apk/debug/app-debug.apk`
 GitHub Actions builds on every push:
 - Unit tests → Debug APK → Release APK
 - Artifacts uploaded with 90-day retention
-- llama.cpp pinned to `b8508` for reproducible builds
+- llama.cpp pinned to `b8648` for reproducible builds (Gemma 4 support)
 - Release created automatically on `v*` tags
 
 ## Requirements
@@ -174,10 +174,10 @@ GitHub Actions builds on every push:
 ## Known Limitations
 
 1. **Neural TTS not yet functional** — Android System TTS is the only working voice output. Waiting for llama.cpp upstream (LFM2.5-Audio PR #18641 or Sesame CSM Issue #12392).
-2. **No streaming text** — full response generated before display (no token-by-token UI updates).
-3. **Generation can be slow** — 5–15 seconds on a Pixel 9 with 4B models. 30-second timeout prevents infinite hangs.
-4. **First launch requires download** — 1.6–7.9 GB model download needed before first use.
-5. **Noromaid 7B URL** — NeverSleep repo has non-standard filenames, may need verification.
+2. ~~No streaming text~~ — **Fixed!** Tokens now stream in real-time via JNI callback.
+3. **Generation can be slow** — 5–15 seconds on a Pixel 9 with 4B models. 60-second timeout prevents infinite hangs.
+4. **First launch requires download** — 2.7–7.9 GB model download needed before first use.
+5. **Gemma 4 tokenizer** — llama.cpp Gemma 4 tokenizer fix (PR #21343) may or may not be in b8648. If you see `<unused24>` tokens, update llama.cpp to latest master.
 
 ## Privacy
 
@@ -195,4 +195,4 @@ Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for detai
 
 Third-party attributions: [NOTICE](NOTICE)
 
-**Note on AI models:** Models are not bundled with the app. They are downloaded by the user at runtime. Each model has its own license (Noromaid: CC-BY-NC, Gemma: Google terms, Qwen: Apache 2.0, MythoMax: Llama 2 license). Users are responsible for complying with respective model licenses.
+**Note on AI models:** Models are not bundled with the app. They are downloaded by the user at runtime. Each model has its own license (Gemma 4: Google terms, Qwen: Apache 2.0, Noromaid: CC-BY-NC, MythoMax: Llama 2 license). Users are responsible for complying with respective model licenses.

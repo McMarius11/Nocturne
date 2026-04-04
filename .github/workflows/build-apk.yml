@@ -37,8 +37,8 @@ jobs:
       - name: Clone llama.cpp
         run: |
           mkdir -p external
-          git clone --depth 1 --branch b8508 --recurse-submodules --shallow-submodules \
-            https://github.com/ggerganov/llama.cpp.git external/llama.cpp
+          git clone --depth 1 --branch b8648 --recurse-submodules --shallow-submodules \
+            https://github.com/ggml-org/llama.cpp.git external/llama.cpp
 
       - name: Write local.properties
         run: echo "sdk.dir=$ANDROID_HOME" > local.properties

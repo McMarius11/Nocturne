@@ -2,9 +2,8 @@ package com.nexus.companion.llm
 
 enum class PromptFormat {
     ALPACA,      // ### Instruction / ### Input / ### Response (Noromaid, MythoMax)
-    GEMMA2,      // <start_of_turn>user\n...<end_of_turn> (Gemma 2 — no system turn)
-    GEMMA3,      // <start_of_turn>system\n...<end_of_turn> (Gemma 3 — has system turn)
-    CHATML       // <|im_start|>system\n...<|im_end|>
+    GEMMA,       // <start_of_turn>user\n...<end_of_turn> (Gemma 3/4 — has system turn)
+    CHATML       // <|im_start|>system\n...<|im_end|> (Qwen3)
 }
 
 data class ModelInfo(
@@ -16,9 +15,40 @@ data class ModelInfo(
     val sizeBytes: Long,
     val batteryPerHour: Int,
     val description: String,
-    val promptFormat: PromptFormat = PromptFormat.ALPACA
+    val promptFormat: PromptFormat = PromptFormat.ALPACA,
+    val contextLength: Int = 8192
 ) {
     companion object {
+        // --- Recommended: Gemma 4 E4B Uncensored ---
+
+        val GEMMA4_E4B_UNCENSORED = ModelInfo(
+            id = "gemma4-e4b-uncensored",
+            displayName = "Gemma 4 E4B",
+            fileName = "Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf",
+            downloadUrl = "https://huggingface.co/HauhauCS/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive/resolve/main/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf",
+            sizeGb = 5.0f,
+            sizeBytes = 5_000_000_000L,
+            batteryPerHour = 12,
+            description = "Empfohlen — Gemma 4, unzensiert, multilingual (5 GB)",
+            promptFormat = PromptFormat.GEMMA,
+            contextLength = 8192  // 128K native, but 8K is practical on mobile
+        )
+
+        // --- Uncensored / Abliterated ---
+
+        val QWEN3_4B_ABLITERATED = ModelInfo(
+            id = "qwen3-4b-abliterated",
+            displayName = "Qwen3 4B Abliterated",
+            fileName = "mlabonne_Qwen3-4B-abliterated-Q4_K_M.gguf",
+            downloadUrl = "https://huggingface.co/bartowski/mlabonne_Qwen3-4B-abliterated-GGUF/resolve/main/mlabonne_Qwen3-4B-abliterated-Q4_K_M.gguf",
+            sizeGb = 2.7f,
+            sizeBytes = 2_900_000_000L,
+            batteryPerHour = 8,
+            description = "Thinking-Modus, unzensiert, kleiner (2.7 GB)",
+            promptFormat = PromptFormat.CHATML,
+            contextLength = 8192
+        )
+
         // --- Roleplay / Companion models ---
 
         val NOROMAID_7B = ModelInfo(
@@ -29,8 +59,9 @@ data class ModelInfo(
             sizeGb = 5.1f,
             sizeBytes = 5_500_000_000L,
             batteryPerHour = 13,
-            description = "Roleplay — warm und romantisch",
-            promptFormat = PromptFormat.ALPACA
+            description = "Roleplay — warm und romantisch (5.1 GB)",
+            promptFormat = PromptFormat.ALPACA,
+            contextLength = 8192
         )
 
         val MYTHOMAX_13B = ModelInfo(
@@ -41,56 +72,16 @@ data class ModelInfo(
             sizeGb = 7.9f,
             sizeBytes = 8_500_000_000L,
             batteryPerHour = 25,
-            description = "Beste Qualität — ausdrucksstark",
-            promptFormat = PromptFormat.ALPACA
-        )
-
-        // --- Uncensored / Abliterated models ---
-
-        val GEMMA3_4B_HERETIC = ModelInfo(
-            id = "gemma3-4b-heretic",
-            displayName = "Gemma 3 4B Heretic",
-            fileName = "mlabonne_gemma-3-4b-it-abliterated-Q4_K_M.gguf",
-            downloadUrl = "https://huggingface.co/bartowski/mlabonne_gemma-3-4b-it-abliterated-GGUF/resolve/main/mlabonne_gemma-3-4b-it-abliterated-Q4_K_M.gguf",
-            sizeGb = 2.5f,
-            sizeBytes = 2_700_000_000L,
-            batteryPerHour = 8,
-            description = "Abliterated Gemma 3 — unzensiert, multilingual",
-            promptFormat = PromptFormat.GEMMA3
-        )
-
-        val QWEN3_4B_ABLITERATED = ModelInfo(
-            id = "qwen3-4b-abliterated",
-            displayName = "Qwen3 4B Abliterated",
-            fileName = "mlabonne_Qwen3-4B-abliterated-Q4_K_M.gguf",
-            downloadUrl = "https://huggingface.co/bartowski/mlabonne_Qwen3-4B-abliterated-GGUF/resolve/main/mlabonne_Qwen3-4B-abliterated-Q4_K_M.gguf",
-            sizeGb = 2.7f,
-            sizeBytes = 2_900_000_000L,
-            batteryPerHour = 8,
-            description = "Abliterated Qwen3 — Thinking-Modus, unzensiert",
-            promptFormat = PromptFormat.CHATML
-        )
-
-        // --- Lightweight models ---
-
-        val GEMMA_2B = ModelInfo(
-            id = "gemma-2b",
-            displayName = "Gemma 2B",
-            fileName = "gemma-2b-it-q4_k_m.gguf",
-            downloadUrl = "https://huggingface.co/bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf",
-            sizeGb = 1.6f,
-            sizeBytes = 1_700_000_000L,
-            batteryPerHour = 6,
-            description = "Akkusparer — leicht und schnell",
-            promptFormat = PromptFormat.GEMMA2
+            description = "Beste Qualität — ausdrucksstark (7.9 GB)",
+            promptFormat = PromptFormat.ALPACA,
+            contextLength = 4096
         )
 
         val ALL_MODELS = listOf(
-            GEMMA3_4B_HERETIC,
+            GEMMA4_E4B_UNCENSORED,
             QWEN3_4B_ABLITERATED,
             NOROMAID_7B,
-            MYTHOMAX_13B,
-            GEMMA_2B
+            MYTHOMAX_13B
         )
 
         fun findById(id: String): ModelInfo? = ALL_MODELS.find { it.id == id }
