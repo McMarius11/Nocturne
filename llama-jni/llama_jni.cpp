@@ -94,8 +94,10 @@ static void report_progress(const char *fmt, ...) {
     LOGI("%s", buf);
     if (g_progress_env && g_progress_cb && g_progress_mid) {
         jstring jmsg = g_progress_env->NewStringUTF(buf);
-        g_progress_env->CallVoidMethod(g_progress_cb, g_progress_mid, jmsg);
-        g_progress_env->DeleteLocalRef(jmsg);
+        if (jmsg) {
+            g_progress_env->CallVoidMethod(g_progress_cb, g_progress_mid, jmsg);
+            g_progress_env->DeleteLocalRef(jmsg);
+        }
     }
 }
 
@@ -432,10 +434,15 @@ Java_com_nexus_companion_llm_LlamaJni_generateStreaming(
 
     // Get callback methods (delete local ref to class immediately — we only need the method IDs)
     jclass callbackClass = env->GetObjectClass(callback);
+    if (!callbackClass) {
+        g_last_error = "GetObjectClass returned null";
+        return env->NewStringUTF("[Error: Invalid callback object]");
+    }
     jmethodID onTokenMethod = env->GetMethodID(callbackClass, "onToken", "(Ljava/lang/String;)V");
     jmethodID onProgressMethod = env->GetMethodID(callbackClass, "onProgress", "(Ljava/lang/String;)V");
     env->DeleteLocalRef(callbackClass);
     if (!onTokenMethod || !onProgressMethod) {
+        env->ExceptionClear(); // Clear pending NoSuchMethodException before further JNI calls
         LOGE("Callback methods not found (onToken=%p, onProgress=%p)", onTokenMethod, onProgressMethod);
         return env->NewStringUTF("[Error: Invalid callback]");
     }
@@ -446,6 +453,11 @@ Java_com_nexus_companion_llm_LlamaJni_generateStreaming(
     g_progress_mid = onProgressMethod;
 
     const char *promptStr = env->GetStringUTFChars(prompt, nullptr);
+    if (!promptStr) {
+        g_last_error = "Failed to get prompt string (OOM?)";
+        g_progress_env = nullptr; g_progress_cb = nullptr; g_progress_mid = nullptr;
+        return env->NewStringUTF("[Error: OOM getting prompt]");
+    }
     std::string promptCpp(promptStr);
     env->ReleaseStringUTFChars(prompt, promptStr);
 
