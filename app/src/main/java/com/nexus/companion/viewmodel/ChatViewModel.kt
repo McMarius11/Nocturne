@@ -81,6 +81,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val _streamingText = MutableStateFlow("")
     val streamingText: StateFlow<String> = _streamingText
 
+    /** Auto-speak responses via TTS (sentence-level streaming) */
+    private val _autoTtsEnabled = MutableStateFlow(false)
+    val autoTtsEnabled: StateFlow<Boolean> = _autoTtsEnabled
+
     private var isPhoneMode = false
     private var idleTimerJob: Job? = null
     private var errorDismissJob: Job? = null
@@ -128,6 +132,19 @@ Keep your responses natural and not too long."""
         viewModelScope.launch {
             llmEngine.tokenStream.collect { token ->
                 _streamingText.value += token
+            }
+        }
+
+        // Sentence-level TTS streaming: speak each sentence as it's generated
+        viewModelScope.launch {
+            llmEngine.sentenceStream.collect { sentence ->
+                if (_autoTtsEnabled.value && _isGenerating.value) {
+                    try {
+                        ttsEngine.speak(sentence)
+                    } catch (e: Exception) {
+                        DebugLog.tts("Sentence TTS error: ${e.message}")
+                    }
+                }
             }
         }
 
@@ -252,6 +269,13 @@ Keep your responses natural and not too long."""
         viewModelScope.launch {
             settingsStore.setVoiceProfileId(profile.id)
         }
+    }
+
+    // ===== Auto TTS =====
+
+    fun toggleAutoTts() {
+        _autoTtsEnabled.value = !_autoTtsEnabled.value
+        DebugLog.tts("Auto-TTS ${if (_autoTtsEnabled.value) "enabled" else "disabled"}")
     }
 
     // ===== Chat =====

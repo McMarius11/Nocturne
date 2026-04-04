@@ -37,6 +37,14 @@ class LlmEngine(private val context: Context) {
     private val _tokenStream = MutableSharedFlow<String>(extraBufferCapacity = 64)
     val tokenStream: SharedFlow<String> = _tokenStream
 
+    /** Emits complete sentences for TTS streaming (sentence boundary detection) */
+    private val _sentenceStream = MutableSharedFlow<String>(extraBufferCapacity = 16)
+    val sentenceStream: SharedFlow<String> = _sentenceStream
+
+    /** KV cache state: true if we can use continueStreaming for next turn */
+    @Volatile
+    private var isKvCached = false
+
     val downloadState get() = modelManager.downloadProgress
 
     fun isReady(): Boolean = jni.isModelLoaded()
@@ -75,6 +83,8 @@ class LlmEngine(private val context: Context) {
             val loadMs = System.currentTimeMillis() - loadStart
             if (success) {
                 currentModel = model
+                isKvCached = false
+                triedSingleThread = false
                 val info = jni.getModelInfo()
                 DebugLog.llm("Model loaded in ${loadMs}ms ($info)")
 
@@ -169,23 +179,35 @@ class LlmEngine(private val context: Context) {
     ): String {
         try {
             val format = currentModel?.promptFormat ?: PromptFormat.ALPACA
-            val prompt = buildPrompt(format, systemPrompt, chatHistory, userMessage, memoryContext)
-            DebugLog.llm("Generate: ${prompt.length} chars, format=$format, maxTokens=$maxTokens")
-            DebugLog.llm("Prompt first 120: ${prompt.take(120).replace("\n", "\\n")}")
-            DebugLog.llm("Prompt last 120: ${prompt.takeLast(120).replace("\n", "\\n")}")
+            val useIncremental = isKvCached && jni.getCurrentPosition() > 0
 
             val genStart = System.currentTimeMillis()
             var tokenCount = 0
+            val sentenceBuffer = StringBuilder()
 
-            // Use streaming generation with token counting
+            // Callback: streaming tokens + sentence detection for TTS
             val callback = object : LlamaJni.TokenCallback {
                 override fun onToken(token: String) {
                     tokenCount++
                     _tokenStream.tryEmit(token)
-                    // Log first token timing
+
                     if (tokenCount == 1) {
                         val firstTokenMs = System.currentTimeMillis() - genStart
                         DebugLog.llm("First token in ${firstTokenMs}ms: \"${token.take(20)}\"")
+                    }
+
+                    // Sentence-level TTS streaming: detect sentence boundaries
+                    sentenceBuffer.append(token)
+                    val text = sentenceBuffer.toString()
+                    val sentenceEnd = text.lastIndexOfAny(charArrayOf('.', '!', '?', '\n'))
+                    if (sentenceEnd >= 0 && text.length > sentenceEnd + 1) {
+                        // We have a complete sentence + start of next
+                        val sentence = text.substring(0, sentenceEnd + 1).trim()
+                        if (sentence.length >= 3) { // Skip tiny fragments
+                            _sentenceStream.tryEmit(sentence)
+                        }
+                        sentenceBuffer.clear()
+                        sentenceBuffer.append(text.substring(sentenceEnd + 1))
                     }
                 }
 
@@ -194,57 +216,102 @@ class LlmEngine(private val context: Context) {
                 }
             }
 
-            DebugLog.llm("Model state before generate: ${jni.getModelInfo()}")
-            DebugLog.llm("Calling JNI generateStreaming...")
+            val result: String
 
-            // Watchdog: log every 15s while JNI is running
-            // Prompt decode for 4B models on mobile CPU can take 2-4 minutes — be patient
-            val watchdogJob = engineScope.launch {
-                var elapsed = 0
-                while (true) {
-                    kotlinx.coroutines.delay(15_000)
-                    elapsed += 15
-                    if (tokenCount == 0) {
-                        DebugLog.llm("Prompt decode in progress... ${elapsed}s (no tokens yet)")
-                    } else {
-                        DebugLog.llm("Generating... ${elapsed}s ($tokenCount tokens so far)")
-                    }
-                    // Hard timeout: abort after 5 minutes with no tokens
-                    if (elapsed >= 300 && tokenCount == 0) {
-                        DebugLog.llm("TIMEOUT: Aborting — no tokens after ${elapsed}s")
-                        jni.abort()
-                        break
-                    }
+            if (useIncremental) {
+                // Incremental mode: only decode new user turn
+                val continuation = buildContinuation(format, userMessage)
+                DebugLog.llm("Continue: ${continuation.length} chars (KV pos=${jni.getCurrentPosition()})")
+                DebugLog.llm("Continuation: ${continuation.replace("\n", "\\n")}")
+
+                val watchdogJob = launchWatchdog(genStart) { tokenCount }
+                result = try {
+                    jni.continueStreaming(continuation, maxTokens, callback)
+                } finally {
+                    watchdogJob.cancel()
+                }
+            } else {
+                // Full prompt mode: decode everything from scratch
+                val prompt = buildPrompt(format, systemPrompt, chatHistory, userMessage, memoryContext)
+                DebugLog.llm("Generate: ${prompt.length} chars, format=$format, maxTokens=$maxTokens")
+                DebugLog.llm("Prompt first 120: ${prompt.take(120).replace("\n", "\\n")}")
+                DebugLog.llm("Prompt last 120: ${prompt.takeLast(120).replace("\n", "\\n")}")
+                DebugLog.llm("Model state: ${jni.getModelInfo()}")
+
+                val watchdogJob = launchWatchdog(genStart) { tokenCount }
+                result = try {
+                    jni.generateStreaming(prompt, maxTokens, callback)
+                } finally {
+                    watchdogJob.cancel()
                 }
             }
 
-            val result = try {
-                jni.generateStreaming(prompt, maxTokens, callback)
-            } finally {
-                watchdogJob.cancel()
+            // Emit remaining sentence buffer for TTS
+            val remaining = sentenceBuffer.toString().trim()
+            if (remaining.length >= 2) {
+                _sentenceStream.tryEmit(remaining)
             }
+
             val genMs = System.currentTimeMillis() - genStart
             val tokPerSec = if (genMs > 0) tokenCount * 1000.0 / genMs else 0.0
 
             if (result.startsWith("[Error:")) {
                 val nativeError = jni.getLastError()
-                DebugLog.llm("Generation error: $result")
-                DebugLog.llm("Native error: $nativeError")
-                DebugLog.llm("Model info: ${jni.getModelInfo()}")
+                DebugLog.llm("Generation error: $result | Native: $nativeError")
+                isKvCached = false // Invalidate cache on error
             } else if (result.isBlank()) {
                 val nativeError = jni.getLastError()
-                DebugLog.llm("WARNING: Empty response after ${genMs}ms ($tokenCount tokens streamed)")
+                DebugLog.llm("WARNING: Empty response after ${genMs}ms ($tokenCount tokens)")
                 DebugLog.llm("Native error: $nativeError")
-                DebugLog.llm("Model info: ${jni.getModelInfo()}")
+                isKvCached = false
             } else {
                 DebugLog.llm("Response: ${result.length} chars, $tokenCount tokens in ${genMs}ms (${String.format("%.1f", tokPerSec)} t/s)")
+                isKvCached = true // Cache is warm for next turn
             }
 
             return result
         } catch (e: Exception) {
             Log.e(TAG, "Error during generation", e)
             DebugLog.llm("Generation exception: ${e.message}")
+            isKvCached = false
             return "[Error: ${e.message ?: "Unknown"}]"
+        }
+    }
+
+    /** Launch watchdog coroutine that logs progress and aborts after timeout */
+    private fun launchWatchdog(startMs: Long, tokenCount: () -> Int): Job {
+        return engineScope.launch {
+            var elapsed = 0
+            while (true) {
+                kotlinx.coroutines.delay(15_000)
+                elapsed += 15
+                val tc = tokenCount()
+                if (tc == 0) {
+                    DebugLog.llm("Prompt decode in progress... ${elapsed}s")
+                } else {
+                    DebugLog.llm("Generating... ${elapsed}s ($tc tokens)")
+                }
+                if (elapsed >= 300 && tc == 0) {
+                    DebugLog.llm("TIMEOUT: Aborting — no tokens after ${elapsed}s")
+                    jni.abort()
+                    break
+                }
+            }
+        }
+    }
+
+    /**
+     * Build continuation text for incremental KV cache mode.
+     * Only includes the new user turn — previous conversation is already in the cache.
+     */
+    private fun buildContinuation(format: PromptFormat, userMessage: String): String {
+        return when (format) {
+            PromptFormat.CHATML ->
+                "<|im_end|>\n<|im_start|>user\n$userMessage<|im_end|>\n<|im_start|>assistant\n"
+            PromptFormat.GEMMA ->
+                "<end_of_turn>\n<start_of_turn>user\n$userMessage<end_of_turn>\n<start_of_turn>model\n"
+            PromptFormat.ALPACA ->
+                "\n\n### Input:\n$userMessage\n\n### Response:\n"
         }
     }
 
@@ -337,6 +404,7 @@ class LlmEngine(private val context: Context) {
         DebugLog.llm("Unloading model (abort + free)")
         jni.abort()
         currentModel = null
+        isKvCached = false
         // Use engine scope (not GlobalScope) — must complete even if ViewModel is cleared
         engineScope.launch {
             try {

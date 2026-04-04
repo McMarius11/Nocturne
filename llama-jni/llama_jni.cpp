@@ -600,6 +600,174 @@ Java_com_nexus_companion_llm_LlamaJni_generateStreaming(
     return env->NewStringUTF(result.c_str());
 }
 
+/**
+ * Continue generation without resetting KV cache.
+ * Appends newText tokens to the existing context and generates.
+ * Used for multi-turn conversations where system prompt + history is already cached.
+ */
+JNIEXPORT jstring JNICALL
+Java_com_nexus_companion_llm_LlamaJni_continueStreaming(
+    JNIEnv *env, jobject obj,
+    jstring newText, jint maxTokens, jobject callback
+) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    g_abort = false;
+    g_last_error.clear();
+
+    if (!g_model || !g_context || !g_sampler) {
+        g_last_error = "Model not loaded";
+        return env->NewStringUTF("[Error: Model not loaded]");
+    }
+
+    // Get callback methods
+    jclass callbackClass = env->GetObjectClass(callback);
+    if (!callbackClass) {
+        return env->NewStringUTF("[Error: Invalid callback object]");
+    }
+    jmethodID onTokenMethod = env->GetMethodID(callbackClass, "onToken", "(Ljava/lang/String;)V");
+    jmethodID onProgressMethod = env->GetMethodID(callbackClass, "onProgress", "(Ljava/lang/String;)V");
+    env->DeleteLocalRef(callbackClass);
+    if (!onTokenMethod || !onProgressMethod) {
+        env->ExceptionClear();
+        return env->NewStringUTF("[Error: Invalid callback]");
+    }
+
+    g_progress_env = env;
+    g_progress_cb  = callback;
+    g_progress_mid = onProgressMethod;
+
+    const char *textStr = env->GetStringUTFChars(newText, nullptr);
+    if (!textStr) {
+        g_progress_env = nullptr; g_progress_cb = nullptr; g_progress_mid = nullptr;
+        return env->NewStringUTF("[Error: OOM getting text]");
+    }
+    std::string textCpp(textStr);
+    env->ReleaseStringUTFChars(newText, textStr);
+
+    // Do NOT reset KV cache — keep existing context
+    common_sampler_reset(g_sampler);
+
+    report_progress("Continue: tokenizing %d chars, current_pos=%d", (int)textCpp.size(), g_current_pos);
+    auto tokens = common_tokenize(g_context, textCpp, false, true);
+    report_progress("Continue: %d new tokens, appending at pos=%d", (int)tokens.size(), g_current_pos);
+
+    if (tokens.empty()) {
+        g_last_error = "Empty text after tokenization";
+        g_progress_env = nullptr; g_progress_cb = nullptr; g_progress_mid = nullptr;
+        return env->NewStringUTF("[Error: Empty continuation text]");
+    }
+
+    // Check if we have room in the context
+    if (g_current_pos + (int)tokens.size() >= g_n_ctx - OVERFLOW_HEADROOM) {
+        report_progress("Context would overflow (%d + %d >= %d), shifting...",
+                        g_current_pos, (int)tokens.size(), g_n_ctx);
+        shift_context();
+    }
+
+    // Decode new tokens from current position
+    const auto decode_start = ggml_time_us();
+    int decode_result = decode_in_batches(tokens, g_current_pos, true);
+    auto decode_ms = (ggml_time_us() - decode_start) / 1000;
+
+    if (decode_result == 2) {
+        report_progress("Continue decode aborted");
+        g_progress_env = nullptr; g_progress_cb = nullptr; g_progress_mid = nullptr;
+        return env->NewStringUTF("");
+    }
+    if (decode_result != 0) {
+        g_last_error = "Decode failed during continuation";
+        report_progress("Continue decode FAILED (rc=%d)", decode_result);
+        g_progress_env = nullptr; g_progress_cb = nullptr; g_progress_mid = nullptr;
+        return env->NewStringUTF("[Error: Failed to decode continuation]");
+    }
+
+    g_current_pos += (int)tokens.size();
+    report_progress("Continue decoded in %lld ms, pos=%d", (long long)decode_ms, g_current_pos);
+
+    // Generate tokens (same logic as generateStreaming)
+    std::string result;
+    std::string cached_chars;
+    const auto *vocab = llama_model_get_vocab(g_model);
+    const auto gen_start = ggml_time_us();
+    const int64_t GEN_TIMEOUT_US = 60 * 1000000LL;
+    int tokens_generated = 0;
+
+    for (int i = 0; i < maxTokens && !g_abort; i++) {
+        if (ggml_time_us() - gen_start > GEN_TIMEOUT_US) {
+            LOGI("Continue timeout after %d tokens", i);
+            break;
+        }
+        if (g_current_pos >= g_n_ctx - OVERFLOW_HEADROOM) {
+            shift_context();
+        }
+
+        auto new_token = common_sampler_sample(g_sampler, g_context, -1);
+
+        int n_vocab = llama_vocab_n_tokens(vocab);
+        if (new_token < 0 || new_token >= n_vocab) {
+            LOGE("Invalid token %d at step %d", new_token, i);
+            break;
+        }
+
+        common_sampler_accept(g_sampler, new_token, true);
+
+        if (tokens_generated == 0) {
+            auto first_tok_ms = (ggml_time_us() - gen_start) / 1000;
+            LOGI("Continue first token: id=%d latency=%lld ms", new_token, (long long)first_tok_ms);
+        }
+
+        if (llama_vocab_is_eog(vocab, new_token)) {
+            LOGD("EOG at token %d", i);
+            break;
+        }
+
+        auto piece = common_token_to_piece(g_context, new_token);
+        cached_chars += piece;
+
+        if (is_valid_utf8(cached_chars.c_str())) {
+            result += cached_chars;
+            jstring jPiece = env->NewStringUTF(cached_chars.c_str());
+            env->CallVoidMethod(callback, onTokenMethod, jPiece);
+            env->DeleteLocalRef(jPiece);
+            cached_chars.clear();
+        }
+
+        tokens_generated++;
+
+        common_batch_clear(g_batch);
+        common_batch_add(g_batch, new_token, g_current_pos, {0}, true);
+        if (llama_decode(g_context, g_batch) != 0) {
+            LOGE("Decode failed at continue token %d", i);
+            break;
+        }
+        g_current_pos++;
+    }
+
+    if (!cached_chars.empty()) {
+        if (is_valid_utf8(cached_chars.c_str())) {
+            result += cached_chars;
+        } else {
+            result += "\xEF\xBF\xBD";
+        }
+    }
+
+    auto gen_ms = (ggml_time_us() - gen_start) / 1000;
+    double tok_per_sec = gen_ms > 0 ? (tokens_generated * 1000.0 / gen_ms) : 0.0;
+    report_progress("Continue: %d tokens in %lld ms (%.1f t/s), pos=%d",
+         tokens_generated, (long long)gen_ms, tok_per_sec, g_current_pos);
+
+    g_progress_env = nullptr;
+    g_progress_cb  = nullptr;
+    g_progress_mid = nullptr;
+
+    return env->NewStringUTF(result.c_str());
+}
+
+JNIEXPORT jint JNICALL
+Java_com_nexus_companion_llm_LlamaJni_getCurrentPosition(JNIEnv *, jobject) {
+    return g_current_pos;
+}
+
 JNIEXPORT void JNICALL
 Java_com_nexus_companion_llm_LlamaJni_abort(JNIEnv *, jobject) {
     g_abort = true;
