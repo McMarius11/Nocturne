@@ -45,7 +45,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nexus.companion.stt.SpeechRecognizerManager
+import androidx.compose.ui.graphics.Color
 import com.nexus.companion.ui.theme.BatteryGreen
+import com.nexus.companion.ui.theme.BatteryYellow
 import com.nexus.companion.ui.theme.NexusBlack
 import com.nexus.companion.ui.theme.NexusPrimary
 import com.nexus.companion.ui.theme.NexusSecondary
@@ -115,19 +117,15 @@ fun PhoneScreen(
         }
     }
 
-    // Determine visual state
-    val circleColor = when {
-        isSpeaking -> BatteryGreen.copy(alpha = 0.4f)
-        isGenerating -> NexusPrimary.copy(alpha = thinkingPulse * 0.3f)
-        isListening -> NexusPrimary.copy(alpha = 0.2f)
-        else -> NexusSurfaceVariant.copy(alpha = 0.3f)
+    // Determine visual state — each state has a DISTINCT color
+    val stateColor = when {
+        isSpeaking -> BatteryGreen                     // Green = speaking
+        isGenerating -> BatteryYellow                  // Yellow = thinking
+        isListening -> Color(0xFF00BCD4)               // Cyan = listening
+        else -> NexusSurfaceVariant                    // Gray = idle
     }
-    val innerCircleColor = when {
-        isSpeaking -> BatteryGreen.copy(alpha = 0.6f)
-        isGenerating -> NexusPrimary.copy(alpha = thinkingPulse * 0.5f)
-        isListening -> NexusPrimary.copy(alpha = 0.4f)
-        else -> NexusSurfaceVariant.copy(alpha = 0.5f)
-    }
+    val circleColor = stateColor.copy(alpha = 0.3f)
+    val innerCircleColor = stateColor.copy(alpha = 0.6f)
     val circleScale = when {
         isListening -> pulseScale
         isSpeaking -> 1f + (thinkingPulse - 0.6f) * 0.3f
@@ -183,11 +181,12 @@ fun PhoneScreen(
         Spacer(modifier = Modifier.height(32.dp))
 
         // Status text with state-appropriate color
+        // Status text matches circle color for consistency
         val (statusText, statusColor) = when {
             isSpeaking -> "Nexus spricht..." to BatteryGreen
-            isGenerating -> "Nexus denkt nach..." to NexusPrimary
+            isGenerating -> "Nexus denkt nach..." to BatteryYellow
             isProcessing -> (sttText.ifBlank { "Verarbeite..." }) to NexusTextSecondary
-            isListening -> "Hört zu..." to NexusPrimary
+            isListening -> "Hört zu..." to Color(0xFF00BCD4)
             sttStarting && isCallActive -> "Verbinde..." to NexusTextDim
             sttText.isNotBlank() -> sttText to NexusTextSecondary
             else -> "Tippe auf das Mikrofon" to NexusTextDim

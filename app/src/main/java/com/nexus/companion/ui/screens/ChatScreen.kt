@@ -159,22 +159,29 @@ fun ChatScreen(
             colors = TopAppBarDefaults.topAppBarColors(containerColor = NexusBlack),
             actions = {
                 IconButton(onClick = onNavigateToPhone) {
-                    Icon(Icons.Default.Call, "Phone Mode", tint = NexusPrimary)
+                    Icon(Icons.Default.Call, "Sprachmodus", tint = NexusPrimary)
                 }
                 IconButton(onClick = { showModelSwitcher = true }) {
-                    Icon(Icons.Default.Psychology, "Model", tint = NexusPrimary)
-                }
-                IconButton(onClick = { showVoiceSwitcher = true }) {
-                    Icon(Icons.Default.RecordVoiceOver, "Voice", tint = NexusPrimary)
+                    Icon(Icons.Default.Psychology, "Modell wählen", tint = NexusPrimary)
                 }
                 Box {
                     IconButton(onClick = { showMenu = true }) {
-                        Icon(Icons.Default.MoreVert, "More", tint = NexusTextSecondary)
+                        Icon(Icons.Default.MoreVert, "Menü", tint = NexusTextSecondary)
                     }
                     DropdownMenu(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false }
                     ) {
+                        DropdownMenuItem(
+                            text = { Text("Stimme / TTS") },
+                            onClick = {
+                                showVoiceSwitcher = true
+                                showMenu = false
+                            },
+                            leadingIcon = {
+                                Icon(Icons.Default.RecordVoiceOver, null, tint = NexusPrimary)
+                            }
+                        )
                         DropdownMenuItem(
                             text = {
                                 Text(if (isModelLoaded) "LLM ausschalten" else "LLM einschalten")

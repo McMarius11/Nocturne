@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -326,12 +327,25 @@ private fun ModelCard(
                         }
                     }
                     isDownloaded -> {
-                        Icon(
-                            Icons.Default.Check,
-                            contentDescription = "Downloaded",
-                            tint = BatteryGreen,
-                            modifier = Modifier.size(16.dp)
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.Check,
+                                contentDescription = "Heruntergeladen",
+                                tint = BatteryGreen,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            if (!isSelected && onLongClick != null) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Icon(
+                                    Icons.Default.DeleteSweep,
+                                    contentDescription = "Löschen",
+                                    tint = NexusTextDim,
+                                    modifier = Modifier
+                                        .size(16.dp)
+                                        .clickable { onLongClick() }
+                                )
+                            }
+                        }
                     }
                     else -> {
                         Icon(
