@@ -1,5 +1,9 @@
 package com.nexus.companion.ui.screens
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -15,8 +19,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -32,6 +38,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -52,11 +59,11 @@ fun DebugLogScreen(
     onBack: () -> Unit,
     debugInfo: String = ""
 ) {
+    val context = LocalContext.current
     val entries by DebugLog.entries.collectAsState()
     val listState = rememberLazyListState()
     var showSystemInfo by remember { mutableStateOf(true) }
 
-    // Auto-scroll to bottom
     LaunchedEffect(entries.size) {
         if (entries.isNotEmpty()) {
             listState.animateScrollToItem(entries.size - 1)
@@ -76,15 +83,36 @@ fun DebugLogScreen(
             colors = TopAppBarDefaults.topAppBarColors(containerColor = NexusBlack),
             navigationIcon = {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = NexusPrimary)
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Zurück", tint = NexusPrimary)
                 }
             },
             actions = {
+                // Toggle system info
                 IconButton(onClick = { showSystemInfo = !showSystemInfo }) {
-                    Icon(Icons.Default.Refresh, "System Info", tint = NexusTextSecondary)
+                    Icon(
+                        if (showSystemInfo) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        "System Info",
+                        tint = NexusTextSecondary
+                    )
                 }
+                // Copy all logs to clipboard
+                IconButton(onClick = {
+                    val allText = buildString {
+                        if (debugInfo.isNotBlank()) {
+                            appendLine(debugInfo)
+                            appendLine("---")
+                        }
+                        entries.forEach { appendLine(it) }
+                    }
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("Nexus Debug Log", allText))
+                    Toast.makeText(context, "Log kopiert", Toast.LENGTH_SHORT).show()
+                }) {
+                    Icon(Icons.Default.ContentCopy, "Log kopieren", tint = NexusTextSecondary)
+                }
+                // Clear logs
                 IconButton(onClick = { DebugLog.clear() }) {
-                    Icon(Icons.Default.Delete, "Clear", tint = NexusTextSecondary)
+                    Icon(Icons.Default.Delete, "Log löschen", tint = NexusTextSecondary)
                 }
             }
         )
@@ -100,9 +128,8 @@ fun DebugLogScreen(
                 debugInfo.lines().forEach { line ->
                     val color = when {
                         line.startsWith("===") -> NexusPrimary
-                        line.contains("loaded: true") -> BatteryGreen
-                        line.contains("loaded: false") -> BatteryRed
-                        line.contains("None") -> BatteryYellow
+                        line.contains("loaded: true") || line.contains("ready:") -> BatteryGreen
+                        line.contains("loaded: false") || line.contains("None") -> BatteryRed
                         else -> NexusTextSecondary
                     }
                     Text(
@@ -118,11 +145,13 @@ fun DebugLogScreen(
 
         if (entries.isEmpty()) {
             Text(
-                "Keine Log-Einträge.\nSende eine Nachricht um Logs zu sehen.\n\nTipps zum Troubleshooting:\n" +
-                "• Prüfe ob ein Modell geladen ist (oben)\n" +
-                "• Sende eine Testnachricht wie \"Hallo\"\n" +
-                "• Schaue hier nach Fehlern (rot markiert)\n" +
-                "• Prüfe die Token-IDs und Prompt-Preview",
+                "Keine Log-Einträge.\n\n" +
+                "Sende eine Nachricht um Logs zu sehen.\n\n" +
+                "Troubleshooting:\n" +
+                "  1. Prüfe ob ein Modell geladen ist\n" +
+                "  2. Sende eine Testnachricht\n" +
+                "  3. Fehler werden rot markiert\n" +
+                "  4. Log kopieren mit dem Copy-Button oben",
                 color = NexusTextDim,
                 fontSize = 13.sp,
                 modifier = Modifier.padding(24.dp)
@@ -140,7 +169,7 @@ fun DebugLogScreen(
                 val color = when {
                     entry.contains("FAILED") || entry.contains("Error") || entry.contains("FATAL") -> BatteryRed
                     entry.contains("WARNING") -> BatteryYellow
-                    entry.contains("loaded in") || entry.contains("Generated") -> BatteryGreen
+                    entry.contains("loaded in") || entry.contains("Generated") || entry.contains("ready") -> BatteryGreen
                     entry.contains("LLM:") -> NexusTextPrimary
                     entry.contains("TTS:") -> NexusTextSecondary
                     entry.contains("STT:") -> NexusTextSecondary

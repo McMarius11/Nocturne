@@ -15,7 +15,7 @@ val NexusAccent = Color(0xFFCF6679)
 
 val NexusTextPrimary = Color(0xFFE8E8E8)
 val NexusTextSecondary = Color(0xFF9E9E9E)
-val NexusTextDim = Color(0xFF666666)
+val NexusTextDim = Color(0xFF888888)    // WCAG AA compliant (>4.5:1 on black)
 
 val UserBubble = Color(0xFF1A2A3A)       // Blue-tinted dark (clearly distinct)
 val AssistantBubble = Color(0xFF1A0E2E)  // Purple-tinted dark

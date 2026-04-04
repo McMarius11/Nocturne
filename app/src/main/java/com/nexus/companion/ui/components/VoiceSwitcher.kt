@@ -72,13 +72,19 @@ fun VoiceSwitcherSheet(
         ) {
             // --- Voice Profile Section ---
             Text(
-                text = "Sprache / Language",
+                text = "Spracheingabe",
                 fontSize = 20.sp,
                 color = NexusTextPrimary,
+                modifier = Modifier.padding(bottom = 4.dp)
+            )
+            Text(
+                text = "Sprache für Spracherkennung (STT) wählen",
+                fontSize = 13.sp,
+                color = NexusTextDim,
                 modifier = Modifier.padding(bottom = 12.dp)
             )
 
-            VoiceProfile.ALL_PROFILES.filter { !it.isNeural }.forEach { profile ->
+            VoiceProfile.ALL_PROFILES.forEach { profile ->
                 val isSelected = profile.id == currentProfileId
 
                 VoiceCard(
@@ -96,13 +102,13 @@ fun VoiceSwitcherSheet(
 
             // --- TTS Model Section ---
             Text(
-                text = "Stimme / TTS Model",
+                text = "Sprachausgabe",
                 fontSize = 20.sp,
                 color = NexusTextPrimary,
                 modifier = Modifier.padding(bottom = 4.dp)
             )
             Text(
-                text = "Neural-Stimme herunterladen für natürlichere Sprache",
+                text = "Neuronale Stimme für natürlichere Sprachausgabe",
                 fontSize = 13.sp,
                 color = NexusTextDim,
                 modifier = Modifier.padding(bottom = 12.dp)
@@ -111,7 +117,7 @@ fun VoiceSwitcherSheet(
             // Android System TTS (always available)
             VoiceCard(
                 name = "Android System TTS",
-                description = "Standard — immer verfügbar, kein Download nötig",
+                description = "Eingebaut — sofort verfügbar",
                 languages = "DE + EN",
                 isSelected = currentTtsModelId == null,
                 onClick = { onTtsModelSelected(TtsModelInfo(
@@ -142,10 +148,10 @@ fun VoiceSwitcherSheet(
                 Spacer(modifier = Modifier.height(6.dp))
             }
 
-            // Experimental section
+            // Experimental section (pending llama.cpp upstream)
             Spacer(modifier = Modifier.height(12.dp))
             Text(
-                text = "Experimentell (coming soon)",
+                text = "Bald verfügbar",
                 fontSize = 14.sp,
                 color = NexusTextDim,
                 modifier = Modifier.padding(bottom = 8.dp)

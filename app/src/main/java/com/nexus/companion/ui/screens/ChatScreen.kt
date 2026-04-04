@@ -70,6 +70,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Settings
 import com.nexus.companion.llm.ModelManager
 import com.nexus.companion.ui.components.MessageBubble
 import com.nexus.companion.ui.components.ModelSwitcherSheet
@@ -89,7 +90,8 @@ import com.nexus.companion.viewmodel.ChatViewModel
 fun ChatScreen(
     viewModel: ChatViewModel,
     onNavigateToPhone: () -> Unit,
-    onNavigateToDebugLog: () -> Unit = {}
+    onNavigateToDebugLog: () -> Unit = {},
+    onNavigateToSettings: () -> Unit = {}
 ) {
     val messages by viewModel.messages.collectAsState(initial = emptyList())
     val isGenerating by viewModel.isGenerating.collectAsState()
@@ -205,6 +207,16 @@ fun ChatScreen(
                             },
                             leadingIcon = {
                                 Icon(Icons.Default.DeleteSweep, null, tint = NexusSecondary)
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Einstellungen") },
+                            onClick = {
+                                onNavigateToSettings()
+                                showMenu = false
+                            },
+                            leadingIcon = {
+                                Icon(Icons.Default.Settings, null, tint = NexusTextDim)
                             }
                         )
                         DropdownMenuItem(

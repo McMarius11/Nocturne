@@ -10,12 +10,12 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -26,11 +26,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nexus.companion.ui.theme.AssistantBubble
 import com.nexus.companion.ui.theme.NexusPrimary
+import com.nexus.companion.ui.theme.NexusSurfaceVariant
 import com.nexus.companion.ui.theme.NexusTextDim
 import com.nexus.companion.ui.theme.NexusTextPrimary
 import com.nexus.companion.ui.theme.UserBubble
@@ -51,20 +54,9 @@ fun MessageBubble(
     val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
     var showTimestamp by remember { mutableStateOf(false) }
 
-    // Blinking cursor for streaming
-    val cursorAlpha = if (isStreaming) {
-        val transition = rememberInfiniteTransition(label = "cursor")
-        val alpha by transition.animateFloat(
-            initialValue = 0f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(500),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "cursorBlink"
-        )
-        alpha
-    } else 0f
+    // Responsive max width: 85% of screen, capped at 400dp
+    val screenWidth = LocalConfiguration.current.screenWidthDp.dp
+    val maxBubbleWidth = minOf(screenWidth * 0.85f, 400.dp)
 
     Box(
         modifier = modifier.fillMaxWidth(),
@@ -82,7 +74,7 @@ fun MessageBubble(
                 ),
                 color = if (isUser) UserBubble else AssistantBubble,
                 modifier = Modifier
-                    .widthIn(max = 300.dp)
+                    .widthIn(max = maxBubbleWidth)
                     .combinedClickable(
                         onClick = { showTimestamp = !showTimestamp },
                         onLongClick = {
@@ -92,16 +84,24 @@ fun MessageBubble(
                         }
                     )
             ) {
-                Text(
-                    text = if (isStreaming) "$content\u258C" else content,  // ▌ cursor
-                    color = NexusTextPrimary,
-                    fontSize = 15.sp,
-                    lineHeight = 22.sp,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
-                )
+                // Check for code blocks and render accordingly
+                if (content.contains("```")) {
+                    CodeAwareText(
+                        text = if (isStreaming) "$content\u258C" else content,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                    )
+                } else {
+                    Text(
+                        text = if (isStreaming) "$content\u258C" else content,
+                        color = NexusTextPrimary,
+                        fontSize = 15.sp,
+                        lineHeight = 22.sp,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                    )
+                }
             }
 
-            // Timestamp shown on tap (not always)
+            // Timestamp shown on tap (not always visible — cleaner UI)
             if (showTimestamp || isStreaming) {
                 Text(
                     text = if (isStreaming) "wird generiert..." else timeFormat.format(Date(timestamp)),
@@ -109,6 +109,56 @@ fun MessageBubble(
                     fontSize = 11.sp,
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                 )
+            }
+        }
+    }
+}
+
+/**
+ * Renders text with code block detection.
+ * Text between ``` markers is shown in monospace with a dark background.
+ */
+@Composable
+private fun CodeAwareText(text: String, modifier: Modifier = Modifier) {
+    Column(modifier = modifier) {
+        val parts = text.split("```")
+        parts.forEachIndexed { index, part ->
+            if (index % 2 == 0) {
+                // Normal text
+                if (part.isNotBlank()) {
+                    Text(
+                        text = part.trimEnd(),
+                        color = NexusTextPrimary,
+                        fontSize = 15.sp,
+                        lineHeight = 22.sp
+                    )
+                }
+            } else {
+                // Code block — strip optional language tag on first line
+                val code = part.trimStart('\n').let { block ->
+                    val firstNewline = block.indexOf('\n')
+                    if (firstNewline > 0 && firstNewline < 20 && !block.substring(0, firstNewline).contains(' ')) {
+                        block.substring(firstNewline + 1) // Remove language tag line
+                    } else {
+                        block
+                    }
+                }.trimEnd()
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .background(NexusSurfaceVariant, RoundedCornerShape(8.dp))
+                        .padding(8.dp)
+                ) {
+                    Text(
+                        text = code,
+                        color = NexusTextPrimary,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
             }
         }
     }

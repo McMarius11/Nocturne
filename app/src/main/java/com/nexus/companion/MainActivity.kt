@@ -16,30 +16,32 @@ import androidx.core.content.ContextCompat
 import com.nexus.companion.ui.screens.ChatScreen
 import com.nexus.companion.ui.screens.DebugLogScreen
 import com.nexus.companion.ui.screens.PhoneScreen
+import com.nexus.companion.ui.screens.SettingsScreen
 import com.nexus.companion.ui.theme.NexusTheme
 import com.nexus.companion.viewmodel.ChatViewModel
+
+/** Type-safe navigation destinations */
+sealed class Screen {
+    data object Chat : Screen()
+    data object Phone : Screen()
+    data object Debug : Screen()
+    data object Settings : Screen()
+}
 
 class MainActivity : ComponentActivity() {
 
     private val viewModel: ChatViewModel by viewModels()
 
-    private val permissionLauncher = registerForActivityResult(
+    val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { /* granted or denied */ }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        // Enable edge-to-edge for proper inset handling on Pixel 9 / Android 15+
         enableEdgeToEdge()
 
-        // Request permissions
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-        }
-        // Notifications (Android 13+)
+        // Only request notification permission eagerly (needed for downloads)
+        // RECORD_AUDIO is requested lazily when entering Phone mode
         if (android.os.Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
             != PackageManager.PERMISSION_GRANTED
@@ -49,25 +51,37 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             NexusTheme {
-                var currentScreen by remember { mutableStateOf("chat") }
+                var currentScreen by remember { mutableStateOf<Screen>(Screen.Chat) }
 
                 when (currentScreen) {
-                    "chat" -> ChatScreen(
+                    Screen.Chat -> ChatScreen(
                         viewModel = viewModel,
-                        onNavigateToPhone = { currentScreen = "phone" },
-                        onNavigateToDebugLog = { currentScreen = "debug" }
+                        onNavigateToPhone = {
+                            // Request mic permission lazily before entering phone mode
+                            if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                                != PackageManager.PERMISSION_GRANTED
+                            ) {
+                                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                            }
+                            currentScreen = Screen.Phone
+                        },
+                        onNavigateToDebugLog = { currentScreen = Screen.Debug },
+                        onNavigateToSettings = { currentScreen = Screen.Settings }
                     )
-                    "phone" -> PhoneScreen(
+                    Screen.Phone -> PhoneScreen(
                         viewModel = viewModel,
-                        onHangUp = { currentScreen = "chat" }
+                        onHangUp = { currentScreen = Screen.Chat }
                     )
-                    "debug" -> DebugLogScreen(
-                        onBack = { currentScreen = "chat" },
+                    Screen.Debug -> DebugLogScreen(
+                        onBack = { currentScreen = Screen.Chat },
                         debugInfo = viewModel.getDebugInfo()
+                    )
+                    Screen.Settings -> SettingsScreen(
+                        viewModel = viewModel,
+                        onBack = { currentScreen = Screen.Chat }
                     )
                 }
             }
         }
     }
-
 }

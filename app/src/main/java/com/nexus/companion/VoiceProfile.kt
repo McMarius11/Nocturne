@@ -3,7 +3,8 @@ package com.nexus.companion
 import java.util.Locale
 
 /**
- * Voice profiles for TTS output. Each profile has different language capabilities.
+ * Voice profiles for STT language selection.
+ * Determines which language the speech recognizer listens for.
  * The LLM and memory system are always bilingual (DE + EN).
  */
 data class VoiceProfile(
@@ -19,36 +20,25 @@ data class VoiceProfile(
     companion object {
         val ANDROID_DE = VoiceProfile(
             id = "android-de",
-            displayName = "Android Deutsch",
+            displayName = "Deutsch",
             languages = listOf("de", "en"),
             sttLocale = "de-DE",
             ttsLocale = Locale.GERMAN,
             isNeural = false,
-            description = "System-Stimme — Deutsch & Englisch"
+            description = "Erkennt Deutsch — antwortet in deiner Sprache"
         )
 
         val ANDROID_EN = VoiceProfile(
             id = "android-en",
-            displayName = "Android English",
+            displayName = "English",
             languages = listOf("en", "de"),
             sttLocale = "en-US",
             ttsLocale = Locale.US,
             isNeural = false,
-            description = "System voice — English & German"
+            description = "Recognizes English — responds in your language"
         )
 
-        val NEUTTS_AIR = VoiceProfile(
-            id = "neutts-air",
-            displayName = "NeuTTS Air",
-            languages = listOf("en"),
-            sttLocale = "en-US",
-            ttsLocale = Locale.US,
-            isNeural = true,
-            description = "Neural voice — high quality",
-            warning = "English only / Nur Englisch"
-        )
-
-        val ALL_PROFILES = listOf(ANDROID_DE, ANDROID_EN, NEUTTS_AIR)
+        val ALL_PROFILES = listOf(ANDROID_DE, ANDROID_EN)
 
         fun findById(id: String): VoiceProfile? = ALL_PROFILES.find { it.id == id }
     }
