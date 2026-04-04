@@ -35,7 +35,8 @@ static llama_pos                     g_current_pos = 0;
 static std::string                   g_last_error;
 
 // Constants
-constexpr int BATCH_SIZE = 512;
+constexpr int BATCH_SIZE = 512;       // Logical batch size (max tokens per llama_decode call)
+constexpr int UBATCH_SIZE = 32;       // Physical micro-batch (actual parallel work per iteration)
 constexpr int OVERFLOW_HEADROOM = 4;
 static int g_n_ctx = 4096;
 
@@ -204,14 +205,25 @@ Java_com_nexus_companion_llm_LlamaJni_loadModel(
     auto ctx_params = llama_context_default_params();
     ctx_params.n_ctx = g_n_ctx;
     ctx_params.n_batch = BATCH_SIZE;
-    ctx_params.n_ubatch = BATCH_SIZE;
+    ctx_params.n_ubatch = UBATCH_SIZE;         // Smaller micro-batch = better cache locality on mobile
     ctx_params.n_threads = threads;
     ctx_params.n_threads_batch = threads;
-    ctx_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_AUTO;
+    ctx_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
+    ctx_params.type_k = GGML_TYPE_Q8_0;        // KV cache quantization: 50% less memory bandwidth
+    ctx_params.type_v = GGML_TYPE_Q8_0;        // Negligible quality loss, major speed gain
 
-    LOGI("Context params: ctx=%d batch=%d threads=%d flash_attn=auto", g_n_ctx, BATCH_SIZE, threads);
+    LOGI("Context params: ctx=%d batch=%d ubatch=%d threads=%d flash_attn=on kv=q8_0",
+         g_n_ctx, BATCH_SIZE, UBATCH_SIZE, threads);
 
     g_context = llama_init_from_model(g_model, ctx_params);
+    if (!g_context) {
+        // Flash attention or Q8_0 KV might not be supported — retry with defaults
+        LOGI("Context creation failed, retrying with default KV type and no flash attention...");
+        ctx_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_DISABLED;
+        ctx_params.type_k = GGML_TYPE_F16;
+        ctx_params.type_v = GGML_TYPE_F16;
+        g_context = llama_init_from_model(g_model, ctx_params);
+    }
     if (!g_context) {
         g_last_error = "llama_init_from_model failed (not enough RAM for context)";
         LOGE("%s", g_last_error.c_str());
@@ -736,16 +748,25 @@ Java_com_nexus_companion_llm_LlamaJni_setThreadCount(JNIEnv *env, jobject, jint 
     llama_free(g_context);
     g_context = nullptr;
 
-    // Recreate with new thread count
+    // Recreate with new thread count (same optimizations as loadModel)
     auto ctx_params = llama_context_default_params();
     ctx_params.n_ctx = ctx_size;
     ctx_params.n_batch = BATCH_SIZE;
-    ctx_params.n_ubatch = BATCH_SIZE;
+    ctx_params.n_ubatch = UBATCH_SIZE;
     ctx_params.n_threads = threads;
     ctx_params.n_threads_batch = threads;
-    ctx_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_AUTO;
+    ctx_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
+    ctx_params.type_k = GGML_TYPE_Q8_0;
+    ctx_params.type_v = GGML_TYPE_Q8_0;
 
     g_context = llama_init_from_model(g_model, ctx_params);
+    if (!g_context) {
+        // Fallback without optimizations
+        ctx_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_DISABLED;
+        ctx_params.type_k = GGML_TYPE_F16;
+        ctx_params.type_v = GGML_TYPE_F16;
+        g_context = llama_init_from_model(g_model, ctx_params);
+    }
     if (!g_context) {
         LOGE("Failed to recreate context with %d threads", threads);
         return JNI_FALSE;

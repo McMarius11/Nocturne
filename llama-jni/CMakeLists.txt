@@ -23,10 +23,17 @@ set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
 # CRITICAL: GGML_NATIVE is OFF for cross-compilation, so we MUST set
 # GGML_CPU_ARM_ARCH to enable ARM SIMD features. Without this, ggml
 # falls back to base armv8-a (scalar only) → 10-50x slower.
-set(GGML_CPU_ARM_ARCH "armv8.6-a+dotprod+i8mm+fp16" CACHE STRING "" FORCE)
+# Tensor G4: Cortex-X4/A720 support dotprod, i8mm, fp16, sve
+set(GGML_CPU_ARM_ARCH "armv8.6-a+dotprod+i8mm+fp16+sve" CACHE STRING "" FORCE)
 
 # KleidiAI provides optimized matmul kernels for ARM (20-30% speedup)
 set(GGML_CPU_KLEIDIAI ON CACHE BOOL "" FORCE)
+
+# Runtime weight repacking (Q4_0 → optimized layout for KleidiAI)
+set(GGML_CPU_REPACK ON CACHE BOOL "" FORCE)
+
+# LLAMAFILE: optimized sgemm kernels (small additional speedup)
+set(GGML_LLAMAFILE ON CACHE BOOL "" FORCE)
 
 # Build llama.cpp using its own CMake build system
 # This is robust against internal restructuring of llama.cpp
