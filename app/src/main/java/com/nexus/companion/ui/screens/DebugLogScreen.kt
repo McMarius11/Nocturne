@@ -153,7 +153,8 @@ fun DebugLogScreen(
                 "  1. Prüfe ob ein Modell geladen ist\n" +
                 "  2. Sende eine Testnachricht\n" +
                 "  3. Fehler werden rot markiert\n" +
-                "  4. Log kopieren mit dem Copy-Button oben",
+                "  4. Crash-Reports erscheinen hier automatisch\n" +
+                "  5. Log kopieren mit dem Copy-Button oben",
                 color = NexusTextDim,
                 fontSize = 13.sp,
                 modifier = Modifier.padding(24.dp)
@@ -169,6 +170,7 @@ fun DebugLogScreen(
         ) {
             items(entries) { entry ->
                 val color = when {
+                    entry.contains("CRASH:") -> BatteryRed
                     entry.contains("FAILED") || entry.contains("Error") || entry.contains("FATAL") -> BatteryRed
                     entry.contains("WARNING") -> BatteryYellow
                     entry.contains("loaded in") || entry.contains("Generated") || entry.contains("ready") -> BatteryGreen

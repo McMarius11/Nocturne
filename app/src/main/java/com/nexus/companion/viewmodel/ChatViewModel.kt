@@ -4,6 +4,7 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.nexus.companion.CrashHandler
 import com.nexus.companion.VoiceProfile
 import com.nexus.companion.data.ChatDatabase
 import com.nexus.companion.data.ChatRepository
@@ -103,6 +104,15 @@ Keep your responses natural and not too long."""
         sttManager.initialize()
         refreshDownloadedModels()
         refreshDownloadedTtsModels()
+
+        // Show last crash report in debug log (if app crashed previously)
+        CrashHandler.getLastCrashLog(application)?.let { crashLog ->
+            DebugLog.log("CRASH", "App ist beim letzten Mal abgestürzt!")
+            crashLog.lines().forEach { line ->
+                DebugLog.log("CRASH", line)
+            }
+            _errorMessage.value = "App ist abgestürzt. Details im Debug Log."
+        }
 
         // Auto-refresh on download state changes
         viewModelScope.launch {

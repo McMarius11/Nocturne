@@ -9,6 +9,7 @@ import com.nexus.companion.phone.PhoneCallService
 class NexusApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        CrashHandler.install(this)
         createNotificationChannels()
     }
 
