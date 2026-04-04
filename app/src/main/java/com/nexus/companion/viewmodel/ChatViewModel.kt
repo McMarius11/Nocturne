@@ -69,6 +69,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val _currentTtsModelId = MutableStateFlow<String?>(null)
     val currentTtsModelId: StateFlow<String?> = _currentTtsModelId
 
+    private val _currentSpeakerId = MutableStateFlow(0)
+    val currentSpeakerId: StateFlow<Int> = _currentSpeakerId
+
     private val _downloadedTtsModels = MutableStateFlow<Set<String>>(emptySet())
     val downloadedTtsModels: StateFlow<Set<String>> = _downloadedTtsModels
 
@@ -187,6 +190,10 @@ Keep your responses natural and not too long."""
                 _currentTtsModelId.value = savedTtsId
                 ttsEngine.setTtsModel(savedTtsId)
             }
+
+            val savedSpeakerId = settingsStore.getTtsSpeakerId()
+            _currentSpeakerId.value = savedSpeakerId
+            ttsEngine.setSpeakerId(savedSpeakerId)
         }
     }
 
@@ -268,6 +275,16 @@ Keep your responses natural and not too long."""
         sttManager.languageCode = profile.sttLocale
         viewModelScope.launch {
             settingsStore.setVoiceProfileId(profile.id)
+        }
+    }
+
+    // ===== Speaker Selection =====
+
+    fun selectSpeaker(speakerId: Int) {
+        _currentSpeakerId.value = speakerId
+        ttsEngine.setSpeakerId(speakerId)
+        viewModelScope.launch {
+            settingsStore.setTtsSpeakerId(speakerId)
         }
     }
 

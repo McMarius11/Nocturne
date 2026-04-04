@@ -31,6 +31,7 @@ class NeuTtsEngine(private val context: Context) {
     private var activeTtsModelId: String? = null
 
     private var currentProfile: VoiceProfile = VoiceProfile.ANDROID_DE
+    private var selectedSpeakerId: Int = 0
 
     @Volatile
     private var completionLatch: java.util.concurrent.CountDownLatch? = null
@@ -88,6 +89,13 @@ class NeuTtsEngine(private val context: Context) {
 
     fun getCurrentProfile(): VoiceProfile = currentProfile
 
+    fun setSpeakerId(id: Int) {
+        selectedSpeakerId = id
+        DebugLog.tts("Speaker set to ID=$id (${TtsSpeaker.findById(id)?.name ?: "unknown"})")
+    }
+
+    fun getSpeakerId(): Int = selectedSpeakerId
+
     fun isNeuralTtsAvailable(): Boolean = sherpaOnnx != null && activeTtsModelId != null
 
     /**
@@ -102,7 +110,7 @@ class NeuTtsEngine(private val context: Context) {
             }
             if (sherpaOnnx!!.isReady) {
                 try {
-                    sherpaOnnx!!.speak(text)
+                    sherpaOnnx!!.speak(text, speakerId = selectedSpeakerId)
                     return@withContext
                 } catch (e: Exception) {
                     Log.w(TAG, "Neural TTS failed, falling back to system TTS", e)

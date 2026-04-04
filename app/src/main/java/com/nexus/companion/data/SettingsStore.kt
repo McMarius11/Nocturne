@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.first
@@ -17,6 +18,7 @@ class SettingsStore(private val context: Context) {
         private val KEY_SELECTED_MODEL = stringPreferencesKey("selected_model_id")
         private val KEY_VOICE_PROFILE = stringPreferencesKey("voice_profile_id")
         private val KEY_TTS_MODEL = stringPreferencesKey("tts_model_id")
+        private val KEY_TTS_SPEAKER = intPreferencesKey("tts_speaker_id")
     }
 
     suspend fun getSelectedModelId(): String? {
@@ -56,6 +58,18 @@ class SettingsStore(private val context: Context) {
             } else {
                 prefs.remove(KEY_TTS_MODEL)
             }
+        }
+    }
+
+    suspend fun getTtsSpeakerId(): Int {
+        return context.dataStore.data.map { prefs ->
+            prefs[KEY_TTS_SPEAKER] ?: 0
+        }.first()
+    }
+
+    suspend fun setTtsSpeakerId(speakerId: Int) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_TTS_SPEAKER] = speakerId
         }
     }
 }

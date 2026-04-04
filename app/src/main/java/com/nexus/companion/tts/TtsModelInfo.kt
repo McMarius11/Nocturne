@@ -13,6 +13,35 @@ package com.nexus.companion.tts
  *
  * Sesame CSM: Conversational speech (experimental, pending llama.cpp Issue #12392).
  */
+/**
+ * Kokoro TTS speaker voices. IDs match the voices.bin order (Kokoro v0.19).
+ */
+data class TtsSpeaker(
+    val id: Int,
+    val name: String,
+    val gender: String,
+    val accent: String,
+    val displayName: String
+) {
+    companion object {
+        val KOKORO_SPEAKERS = listOf(
+            TtsSpeaker(0, "Default", "female", "US", "Default (weiblich, US)"),
+            TtsSpeaker(1, "Bella", "female", "US", "Bella (weiblich, US)"),
+            TtsSpeaker(2, "Nicole", "female", "US", "Nicole (weiblich, US)"),
+            TtsSpeaker(3, "Sarah", "female", "US", "Sarah (weiblich, US)"),
+            TtsSpeaker(4, "Sky", "female", "US", "Sky (weiblich, US)"),
+            TtsSpeaker(5, "Adam", "male", "US", "Adam (männlich, US)"),
+            TtsSpeaker(6, "Michael", "male", "US", "Michael (männlich, US)"),
+            TtsSpeaker(7, "Emma", "female", "UK", "Emma (weiblich, britisch)"),
+            TtsSpeaker(8, "Isabella", "female", "UK", "Isabella (weiblich, britisch)"),
+            TtsSpeaker(9, "George", "male", "UK", "George (männlich, britisch)"),
+            TtsSpeaker(10, "Lewis", "male", "UK", "Lewis (männlich, britisch)")
+        )
+
+        fun findById(id: Int): TtsSpeaker? = KOKORO_SPEAKERS.find { it.id == id }
+    }
+}
+
 data class TtsModelInfo(
     val id: String,
     val displayName: String,

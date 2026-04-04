@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.sp
 import com.nexus.companion.VoiceProfile
 import com.nexus.companion.llm.ModelManager
 import com.nexus.companion.tts.TtsModelInfo
+import com.nexus.companion.tts.TtsSpeaker
 import com.nexus.companion.ui.theme.BatteryGreen
 import com.nexus.companion.ui.theme.BatteryYellow
 import com.nexus.companion.ui.theme.NexusBlack
@@ -50,10 +51,12 @@ import com.nexus.companion.ui.theme.NexusTextSecondary
 fun VoiceSwitcherSheet(
     currentProfileId: String,
     currentTtsModelId: String?,
+    currentSpeakerId: Int,
     downloadedTtsModels: Set<String>,
     ttsDownloadState: ModelManager.DownloadState,
     onProfileSelected: (VoiceProfile) -> Unit,
     onTtsModelSelected: (TtsModelInfo) -> Unit,
+    onSpeakerSelected: (Int) -> Unit,
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -146,6 +149,35 @@ fun VoiceSwitcherSheet(
                     onClick = { onTtsModelSelected(model) }
                 )
                 Spacer(modifier = Modifier.height(6.dp))
+            }
+
+            // --- Speaker Selection (only for Kokoro) ---
+            if (currentTtsModelId == "kokoro-en" && "kokoro-en" in downloadedTtsModels) {
+                Spacer(modifier = Modifier.height(20.dp))
+                Text(
+                    text = "Stimme",
+                    fontSize = 20.sp,
+                    color = NexusTextPrimary,
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
+                Text(
+                    text = "Kokoro Sprecher auswählen (männlich / weiblich)",
+                    fontSize = 13.sp,
+                    color = NexusTextDim,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+
+                TtsSpeaker.KOKORO_SPEAKERS.forEach { speaker ->
+                    val isSelected = speaker.id == currentSpeakerId
+                    VoiceCard(
+                        name = speaker.displayName,
+                        description = speaker.name,
+                        languages = speaker.accent,
+                        isSelected = isSelected,
+                        onClick = { onSpeakerSelected(speaker.id) }
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                }
             }
 
             // Experimental section (pending llama.cpp upstream)
