@@ -10,6 +10,28 @@ https://github.com/ggml-org/llama.cpp
 ==========================================================================
 
 ==========================================================================
+sherpa-onnx - Apache License 2.0
+Copyright (c) 2023-2026 k2-fsa
+https://github.com/k2-fsa/sherpa-onnx
+
+Includes ONNX Runtime - MIT License
+Copyright (c) Microsoft Corporation
+https://github.com/microsoft/onnxruntime
+==========================================================================
+
+==========================================================================
+Kokoro TTS - Apache License 2.0
+Copyright (c) hexgrad
+https://huggingface.co/hexgrad/Kokoro-82M
+==========================================================================
+
+==========================================================================
+Piper TTS - MIT License
+Copyright (c) Michael Hansen / rhasspy
+https://github.com/rhasspy/piper
+==========================================================================
+
+==========================================================================
 AndroidX / Jetpack Compose - Apache License 2.0
 Copyright The Android Open Source Project
 https://developer.android.com/jetpack
@@ -22,6 +44,12 @@ https://square.github.io/okhttp/
 ==========================================================================
 
 ==========================================================================
+Apache Commons Compress - Apache License 2.0
+Copyright The Apache Software Foundation
+https://commons.apache.org/proper/commons-compress/
+==========================================================================
+
+==========================================================================
 Kotlin / Kotlin Coroutines - Apache License 2.0
 Copyright JetBrains s.r.o.
 https://kotlinlang.org/
@@ -31,6 +59,14 @@ https://kotlinlang.org/
 Note on AI Models
 ==========================================================================
 This application does not bundle any AI models. Models are downloaded
-by the user at runtime from third-party sources (e.g. HuggingFace).
-Each model has its own license terms. Users are responsible for
-complying with the respective model licenses.
+by the user at runtime from third-party sources (HuggingFace, GitHub).
+Each model has its own license terms:
+
+- Gemma 4 E4B: Google Gemma Terms of Use
+- Qwen3 4B: Apache License 2.0
+- Noromaid 7B: CC-BY-NC-4.0
+- MythoMax 13B: Llama 2 Community License
+- Kokoro TTS: Apache License 2.0
+- Piper TTS voices: MIT License
+
+Users are responsible for complying with the respective model licenses.
