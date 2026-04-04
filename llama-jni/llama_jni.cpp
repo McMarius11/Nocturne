@@ -11,6 +11,7 @@
 #include "llama.h"
 #include "common.h"
 #include "sampling.h"
+#include "ggml-backend.h"
 
 #define TAG "NexusLlama"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
@@ -585,6 +586,139 @@ Java_com_nexus_companion_llm_LlamaJni_getModelInfo(JNIEnv *env, jobject) {
     info += " vocab=" + std::to_string(llama_vocab_n_tokens(vocab));
     info += " pos=" + std::to_string(g_current_pos);
     return env->NewStringUTF(info.c_str());
+}
+
+/**
+ * Smoke-test: tokenize "hello", decode 1 batch, sample 1 token.
+ * Returns a JSON-like string with timing info, or an error message.
+ * This tells us if llama_decode works AT ALL on this device.
+ */
+JNIEXPORT jstring JNICALL
+Java_com_nexus_companion_llm_LlamaJni_benchmarkDecode(JNIEnv *env, jobject) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    g_last_error.clear();
+
+    if (!g_model || !g_context || !g_sampler) {
+        return env->NewStringUTF("ERROR: Model not loaded");
+    }
+
+    // Reset state
+    reset_state(true);
+    common_sampler_reset(g_sampler);
+
+    // Tokenize a tiny prompt
+    auto tokens = common_tokenize(g_context, "hello", false, false);
+    if (tokens.empty()) {
+        return env->NewStringUTF("ERROR: Failed to tokenize 'hello'");
+    }
+
+    int n_threads = llama_n_threads(g_context);
+    LOGI("benchmarkDecode: %d tokens, %d threads", (int)tokens.size(), n_threads);
+
+    // Decode the tiny prompt
+    common_batch_clear(g_batch);
+    for (int i = 0; i < (int)tokens.size(); i++) {
+        common_batch_add(g_batch, tokens[i], i, {0}, i == (int)tokens.size() - 1);
+    }
+
+    auto t0 = ggml_time_us();
+    int rc = llama_decode(g_context, g_batch);
+    auto decode_us = ggml_time_us() - t0;
+
+    if (rc != 0) {
+        char buf[256];
+        snprintf(buf, sizeof(buf), "ERROR: llama_decode returned %d after %lld ms",
+                 rc, (long long)(decode_us / 1000));
+        return env->NewStringUTF(buf);
+    }
+
+    // Sample one token
+    auto t1 = ggml_time_us();
+    auto tok = common_sampler_sample(g_sampler, g_context, -1);
+    auto sample_us = ggml_time_us() - t1;
+
+    auto piece = common_token_to_piece(g_context, tok);
+
+    char result[512];
+    snprintf(result, sizeof(result),
+             "OK: decode=%lldms sample=%lldms threads=%d tok=%d piece=\"%.20s\"",
+             (long long)(decode_us / 1000), (long long)(sample_us / 1000),
+             n_threads, tok, piece.c_str());
+
+    LOGI("benchmarkDecode: %s", result);
+    reset_state(true);
+    common_sampler_reset(g_sampler);
+    return env->NewStringUTF(result);
+}
+
+/**
+ * Returns info about registered GGML backends and devices.
+ */
+JNIEXPORT jstring JNICALL
+Java_com_nexus_companion_llm_LlamaJni_getBackendInfo(JNIEnv *env, jobject) {
+    std::string info;
+
+    size_t n_reg = ggml_backend_reg_count();
+    info += "Backends (" + std::to_string(n_reg) + "):";
+    for (size_t i = 0; i < n_reg; i++) {
+        auto reg = ggml_backend_reg_get(i);
+        info += " [" + std::string(ggml_backend_reg_name(reg)) + "]";
+    }
+
+    size_t n_dev = ggml_backend_dev_count();
+    info += " | Devices (" + std::to_string(n_dev) + "):";
+    for (size_t i = 0; i < n_dev; i++) {
+        auto dev = ggml_backend_dev_get(i);
+        info += " [" + std::string(ggml_backend_dev_name(dev))
+              + ": " + std::string(ggml_backend_dev_description(dev)) + "]";
+    }
+
+    LOGI("Backend info: %s", info.c_str());
+    return env->NewStringUTF(info.c_str());
+}
+
+/**
+ * Recreate the context with a different thread count.
+ * Used for thread-count fallback (e.g. try 1 thread if 2 hangs).
+ */
+JNIEXPORT jboolean JNICALL
+Java_com_nexus_companion_llm_LlamaJni_setThreadCount(JNIEnv *env, jobject, jint nThreads) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+
+    if (!g_model || !g_context) {
+        LOGE("setThreadCount: no model loaded");
+        return JNI_FALSE;
+    }
+
+    int threads = std::max(1, std::min((int)nThreads, (int)sysconf(_SC_NPROCESSORS_ONLN)));
+    LOGI("Recreating context with %d threads (was %d)", threads, llama_n_threads(g_context));
+
+    // Save current context size
+    int ctx_size = g_n_ctx;
+
+    // Free old context (keep model and sampler)
+    reset_state(false);
+    llama_batch_free(g_batch);
+    llama_free(g_context);
+    g_context = nullptr;
+
+    // Recreate with new thread count
+    auto ctx_params = llama_context_default_params();
+    ctx_params.n_ctx = ctx_size;
+    ctx_params.n_batch = BATCH_SIZE;
+    ctx_params.n_ubatch = BATCH_SIZE;
+    ctx_params.n_threads = threads;
+    ctx_params.n_threads_batch = threads;
+
+    g_context = llama_init_from_model(g_model, ctx_params);
+    if (!g_context) {
+        LOGE("Failed to recreate context with %d threads", threads);
+        return JNI_FALSE;
+    }
+
+    g_batch = llama_batch_init(BATCH_SIZE, 0, 1);
+    LOGI("Context recreated: threads=%d", threads);
+    return JNI_TRUE;
 }
 
 } // extern "C"

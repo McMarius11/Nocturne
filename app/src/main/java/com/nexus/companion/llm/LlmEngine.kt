@@ -77,6 +77,30 @@ class LlmEngine(private val context: Context) {
                 currentModel = model
                 val info = jni.getModelInfo()
                 DebugLog.llm("Model loaded in ${loadMs}ms ($info)")
+
+                // Log GGML backend info (CPU, Vulkan, etc.)
+                try {
+                    val backendInfo = jni.getBackendInfo()
+                    DebugLog.llm("GGML: $backendInfo")
+                } catch (e: Exception) {
+                    DebugLog.llm("Backend info error: ${e.message}")
+                }
+
+                // Smoke test: minimal decode to verify llama_decode works
+                DebugLog.llm("Running smoke test (decode 'hello')...")
+                val smokeStart = System.currentTimeMillis()
+                try {
+                    val smokeResult = jni.benchmarkDecode()
+                    val smokeMs = System.currentTimeMillis() - smokeStart
+                    DebugLog.llm("Smoke test (${smokeMs}ms): $smokeResult")
+
+                    if (smokeResult.startsWith("ERROR")) {
+                        DebugLog.llm("SMOKE TEST FAILED — inference will not work!")
+                    }
+                } catch (e: Exception) {
+                    val smokeMs = System.currentTimeMillis() - smokeStart
+                    DebugLog.llm("Smoke test CRASHED after ${smokeMs}ms: ${e.message}")
+                }
             } else {
                 val error = jni.getLastError()
                 DebugLog.llm("Model load FAILED after ${loadMs}ms: $error")
@@ -93,9 +117,13 @@ class LlmEngine(private val context: Context) {
         }
     }
 
+    /** Track whether we already tried falling back to 1 thread */
+    private var triedSingleThread = false
+
     /**
      * Generate a response with streaming tokens.
      * Each token is emitted to [tokenStream] as it's generated.
+     * If generation times out with 0 tokens, automatically retries with 1 thread.
      */
     suspend fun generate(
         systemPrompt: String,
@@ -109,6 +137,35 @@ class LlmEngine(private val context: Context) {
             return@withContext "[Model not loaded]"
         }
 
+        val result = generateInternal(systemPrompt, chatHistory, userMessage, memoryContext, maxTokens)
+
+        // Thread fallback: if generation produced nothing and we haven't tried 1 thread yet
+        if (result.isBlank() && !triedSingleThread) {
+            DebugLog.llm("=== THREAD FALLBACK: Retrying with 1 thread ===")
+            try {
+                val ok = jni.setThreadCount(1)
+                if (ok) {
+                    triedSingleThread = true
+                    DebugLog.llm("Context recreated with 1 thread, retrying generation...")
+                    return@withContext generateInternal(systemPrompt, chatHistory, userMessage, memoryContext, maxTokens)
+                } else {
+                    DebugLog.llm("Failed to set thread count to 1")
+                }
+            } catch (e: Exception) {
+                DebugLog.llm("Thread fallback error: ${e.message}")
+            }
+        }
+
+        result
+    }
+
+    private suspend fun generateInternal(
+        systemPrompt: String,
+        chatHistory: List<Pair<String, String>>,
+        userMessage: String,
+        memoryContext: String,
+        maxTokens: Int
+    ): String {
         try {
             val format = currentModel?.promptFormat ?: PromptFormat.ALPACA
             val prompt = buildPrompt(format, systemPrompt, chatHistory, userMessage, memoryContext)
@@ -146,10 +203,9 @@ class LlmEngine(private val context: Context) {
                     kotlinx.coroutines.delay(10_000)
                     DebugLog.llm("Still generating... ${elapsed}s ($tokenCount tokens so far)")
                     elapsed += 10
-                    // Hard timeout: abort after 90s with no tokens (prompt decode hung)
-                    if (elapsed >= 90 && tokenCount == 0) {
+                    // Hard timeout: abort after 60s with no tokens (prompt decode hung)
+                    if (elapsed >= 60 && tokenCount == 0) {
                         DebugLog.llm("TIMEOUT: Aborting generation — no tokens after ${elapsed}s")
-                        DebugLog.llm("This usually means the model is too slow for this device or has a compatibility issue.")
                         jni.abort()
                         break
                     }
@@ -178,11 +234,11 @@ class LlmEngine(private val context: Context) {
                 DebugLog.llm("Response: ${result.length} chars, $tokenCount tokens in ${genMs}ms (${String.format("%.1f", tokPerSec)} t/s)")
             }
 
-            result
+            return result
         } catch (e: Exception) {
             Log.e(TAG, "Error during generation", e)
             DebugLog.llm("Generation exception: ${e.message}")
-            "[Error: ${e.message ?: "Unknown"}]"
+            return "[Error: ${e.message ?: "Unknown"}]"
         }
     }
 

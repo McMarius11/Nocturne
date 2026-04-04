@@ -21,4 +21,13 @@ class LlamaJni {
     external fun isModelLoaded(): Boolean
     external fun getLastError(): String
     external fun getModelInfo(): String
+
+    /** Smoke test: tokenize "hello", decode 1 batch, sample 1 token. Returns timing info or error. */
+    external fun benchmarkDecode(): String
+
+    /** Returns registered GGML backends and devices (CPU, Vulkan, etc.) */
+    external fun getBackendInfo(): String
+
+    /** Recreate context with a different thread count (for fallback from N→1 threads) */
+    external fun setThreadCount(nThreads: Int): Boolean
 }
