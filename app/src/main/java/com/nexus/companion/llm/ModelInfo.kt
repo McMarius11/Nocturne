@@ -31,7 +31,7 @@ data class ModelInfo(
             batteryPerHour = 12,
             description = "Empfohlen — Gemma 4, unzensiert, multilingual (5 GB)",
             promptFormat = PromptFormat.GEMMA,
-            contextLength = 8192
+            contextLength = 4096  // 4096 safer on mobile (8192 can segfault in llama.cpp)
         )
 
         val GEMMA4_E4B = ModelInfo(
@@ -44,7 +44,7 @@ data class ModelInfo(
             batteryPerHour = 12,
             description = "Gemma 4, offiziell, multilingual (5 GB)",
             promptFormat = PromptFormat.GEMMA,
-            contextLength = 8192
+            contextLength = 4096  // 4096 safer on mobile (8192 can segfault in llama.cpp)
         )
 
         // --- Uncensored / Abliterated ---

@@ -482,7 +482,7 @@ Keep your responses natural and not too long."""
         sb.appendLine("Storage free: ${String.format("%.1f", manager.getAvailableStorageGb())} GB")
         sb.appendLine("Models stored: ${String.format("%.1f", manager.getUsedStorageGb())} GB")
         sb.appendLine("Downloaded: ${_downloadedModels.value.joinToString(", ")}")
-        sb.appendLine("llama.cpp: b8648")
+        sb.appendLine("llama.cpp: b8662")
         return sb.toString()
     }
 
