@@ -62,8 +62,10 @@ class LlmEngine(private val context: Context) {
             }
 
             val path = modelManager.getModelPath(model).absolutePath
+            val fileSize = java.io.File(path).length() / 1_000_000
             val contextLength = model.contextLength
-            DebugLog.llm("Loading ${model.displayName} (${model.sizeGb} GB, ctx=$contextLength)")
+            DebugLog.llm("Loading ${model.displayName} (${fileSize} MB, ctx=$contextLength, format=${model.promptFormat})")
+            DebugLog.llm("Path: $path")
             val loadStart = System.currentTimeMillis()
             val success = jni.loadModel(
                 modelPath = path,
@@ -111,25 +113,42 @@ class LlmEngine(private val context: Context) {
             val format = currentModel?.promptFormat ?: PromptFormat.ALPACA
             val prompt = buildPrompt(format, systemPrompt, chatHistory, userMessage, memoryContext)
             DebugLog.llm("Generate: ${prompt.length} chars, format=$format, maxTokens=$maxTokens")
-            DebugLog.llm("Prompt preview: ${prompt.takeLast(200)}")
+            DebugLog.llm("Prompt first 120: ${prompt.take(120).replace("\n", "\\n")}")
+            DebugLog.llm("Prompt last 120: ${prompt.takeLast(120).replace("\n", "\\n")}")
 
             val genStart = System.currentTimeMillis()
+            var tokenCount = 0
 
-            // Use streaming generation
+            // Use streaming generation with token counting
             val callback = object : LlamaJni.TokenCallback {
                 override fun onToken(token: String) {
+                    tokenCount++
                     _tokenStream.tryEmit(token)
+                    // Log first token timing
+                    if (tokenCount == 1) {
+                        val firstTokenMs = System.currentTimeMillis() - genStart
+                        DebugLog.llm("First token in ${firstTokenMs}ms: \"${token.take(20)}\"")
+                    }
                 }
             }
 
+            DebugLog.llm("Calling JNI generateStreaming...")
             val result = jni.generateStreaming(prompt, maxTokens, callback)
             val genMs = System.currentTimeMillis() - genStart
+            val tokPerSec = if (genMs > 0) tokenCount * 1000.0 / genMs else 0.0
 
             if (result.startsWith("[Error:")) {
                 val nativeError = jni.getLastError()
-                DebugLog.llm("Generation error: $result (native: $nativeError)")
+                DebugLog.llm("Generation error: $result")
+                DebugLog.llm("Native error: $nativeError")
+                DebugLog.llm("Model info: ${jni.getModelInfo()}")
+            } else if (result.isBlank()) {
+                val nativeError = jni.getLastError()
+                DebugLog.llm("WARNING: Empty response after ${genMs}ms ($tokenCount tokens streamed)")
+                DebugLog.llm("Native error: $nativeError")
+                DebugLog.llm("Model info: ${jni.getModelInfo()}")
             } else {
-                DebugLog.llm("Response: ${result.length} chars in ${genMs}ms")
+                DebugLog.llm("Response: ${result.length} chars, $tokenCount tokens in ${genMs}ms (${String.format("%.1f", tokPerSec)} t/s)")
             }
 
             result
