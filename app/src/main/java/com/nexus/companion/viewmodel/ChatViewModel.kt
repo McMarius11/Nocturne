@@ -133,10 +133,20 @@ Keep your responses natural and not too long."""
             }
 
             val savedModelId = settingsStore.getSelectedModelId()
-            val modelToLoad = if (savedModelId != null && !savedModelId.startsWith("tts_")) {
-                ModelInfo.findById(savedModelId)
-            } else {
-                ModelInfo.ALL_MODELS.firstOrNull {
+            var modelToLoad: ModelInfo? = null
+
+            if (savedModelId != null && !savedModelId.startsWith("tts_")) {
+                modelToLoad = ModelInfo.findById(savedModelId)
+                if (modelToLoad == null) {
+                    // Old model ID (e.g. gemma3-4b-heretic, gemma-2b) — migrate
+                    Log.i(TAG, "Saved model '$savedModelId' no longer exists, migrating...")
+                    DebugLog.llm("Migration: Altes Modell '$savedModelId' existiert nicht mehr")
+                }
+            }
+
+            // Fallback: first downloaded model
+            if (modelToLoad == null) {
+                modelToLoad = ModelInfo.ALL_MODELS.firstOrNull {
                     llmEngine.getModelManager().isModelDownloaded(it)
                 }
             }
@@ -418,6 +428,41 @@ Keep your responses natural and not too long."""
             .filter { java.io.File(modelsDir, it.fileName).exists() }
             .map { it.id }
             .toSet()
+    }
+
+    // ===== System Info =====
+
+    data class StorageInfo(
+        val availableStorageGb: Float,
+        val availableRamGb: Float,
+        val totalRamGb: Float
+    )
+
+    fun getStorageInfo(): StorageInfo {
+        val manager = llmEngine.getModelManager()
+        return StorageInfo(
+            availableStorageGb = manager.getAvailableStorageGb(),
+            availableRamGb = manager.getAvailableRamGb(),
+            totalRamGb = manager.getTotalRamGb()
+        )
+    }
+
+    /** Get debug info for troubleshooting (shown in DebugLogScreen) */
+    fun getDebugInfo(): String {
+        val manager = llmEngine.getModelManager()
+        val model = llmEngine.getCurrentModel()
+        val sb = StringBuilder()
+        sb.appendLine("=== System Info ===")
+        sb.appendLine("Model: ${model?.displayName ?: "None"} (${model?.id ?: "-"})")
+        sb.appendLine("Model loaded: ${llmEngine.isReady()}")
+        sb.appendLine("Format: ${model?.promptFormat ?: "-"}")
+        sb.appendLine("Context: ${model?.contextLength ?: "-"}")
+        sb.appendLine("RAM: ${String.format("%.1f", manager.getAvailableRamGb())} / ${String.format("%.0f", manager.getTotalRamGb())} GB")
+        sb.appendLine("Storage free: ${String.format("%.1f", manager.getAvailableStorageGb())} GB")
+        sb.appendLine("Models stored: ${String.format("%.1f", manager.getUsedStorageGb())} GB")
+        sb.appendLine("Downloaded: ${_downloadedModels.value.joinToString(", ")}")
+        sb.appendLine("llama.cpp: b8648")
+        return sb.toString()
     }
 
     // ===== Chat Management =====

@@ -317,18 +317,22 @@ Keep your responses natural and not too long."""
                 )
 
                 val cleanResponse = response.trim()
-                if (cleanResponse.isNotBlank() && cleanResponse != "[Model not loaded]") {
+                if (cleanResponse.isNotBlank()
+                    && !cleanResponse.startsWith("[Error:")
+                    && cleanResponse != "[Model not loaded]"
+                ) {
                     chatRepo.sendMessage("assistant", cleanResponse)
                     memoryExtractor.extractFromAssistant(cleanResponse)
 
-                    // Speak the response
+                    // Speak the response (speak() is suspend — waits for audio completion)
                     _isSpeaking.value = true
                     updateNotification("Nexus spricht...")
                     ttsEngine.speak(cleanResponse)
                     _isSpeaking.value = false
 
-                    // Wait a moment for TTS to finish, then resume listening
                     delay(500)
+                } else {
+                    Log.w(TAG, "Generation failed or empty: $cleanResponse")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error in conversation loop", e)

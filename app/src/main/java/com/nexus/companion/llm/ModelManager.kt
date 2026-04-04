@@ -1,5 +1,6 @@
 package com.nexus.companion.llm
 
+import android.app.ActivityManager
 import android.content.Context
 import android.os.StatFs
 import kotlinx.coroutines.flow.StateFlow
@@ -10,7 +11,6 @@ class ModelManager(private val context: Context) {
     private val modelsDir: File
         get() = File(context.filesDir, "models").also { it.mkdirs() }
 
-    /** Download progress from the ForegroundService — survives screen-off. */
     val downloadProgress: StateFlow<DownloadState>
         get() = DownloadService.downloadProgress
 
@@ -18,8 +18,14 @@ class ModelManager(private val context: Context) {
 
     fun isModelDownloaded(model: ModelInfo): Boolean {
         val file = getModelPath(model)
-        // Check file exists and is at least 100MB (to catch corrupt/empty files)
         return file.exists() && file.length() > 100_000_000L
+    }
+
+    /** Check actual file size vs expected — returns ratio (1.0 = exact match) */
+    fun getDownloadIntegrity(model: ModelInfo): Float {
+        val file = getModelPath(model)
+        if (!file.exists()) return 0f
+        return file.length().toFloat() / model.sizeBytes.toFloat()
     }
 
     fun getDownloadedModels(): List<ModelInfo> =
@@ -38,12 +44,41 @@ class ModelManager(private val context: Context) {
         return availableBytes / 1_000_000_000f
     }
 
-    /**
-     * Start a model download via ForegroundService.
-     * The service acquires a WakeLock so downloads survive screen-off.
-     * Returns false immediately if storage is insufficient.
-     * Download progress is observed via [downloadProgress].
-     */
+    /** Get available RAM in GB */
+    fun getAvailableRamGb(): Float {
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val memInfo = ActivityManager.MemoryInfo()
+        am.getMemoryInfo(memInfo)
+        return memInfo.availMem / 1_000_000_000f
+    }
+
+    /** Get total device RAM in GB */
+    fun getTotalRamGb(): Float {
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val memInfo = ActivityManager.MemoryInfo()
+        am.getMemoryInfo(memInfo)
+        return memInfo.totalMem / 1_000_000_000f
+    }
+
+    /** Estimate required RAM for a model (model size + ~2 GB for KV cache + overhead) */
+    fun estimateRequiredRamGb(model: ModelInfo): Float {
+        return model.sizeGb + 2.0f  // model + KV cache + Android overhead
+    }
+
+    /** Check if device has enough RAM to load this model */
+    fun hasEnoughRam(model: ModelInfo): Boolean {
+        return getAvailableRamGb() >= estimateRequiredRamGb(model)
+    }
+
+    /** Get total size of all downloaded models in GB */
+    fun getUsedStorageGb(): Float {
+        val totalBytes = ModelInfo.ALL_MODELS
+            .map { getModelPath(it) }
+            .filter { it.exists() }
+            .sumOf { it.length() }
+        return totalBytes / 1_000_000_000f
+    }
+
     fun startDownload(model: ModelInfo): Boolean {
         if (isModelDownloaded(model)) return true
 

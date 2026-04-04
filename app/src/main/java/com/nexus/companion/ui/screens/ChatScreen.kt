@@ -215,6 +215,28 @@ fun ChatScreen(
             }
         )
 
+        // Model loading indicator
+        if (isLoadingModel) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(NexusCard)
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    "LLM wird geladen...",
+                    fontSize = 12.sp,
+                    color = NexusPrimary
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth().height(3.dp),
+                    color = NexusPrimary,
+                    trackColor = NexusSurfaceVariant
+                )
+            }
+        }
+
         // Download progress bar
         if (isDownloading) {
             val progress = (downloadState as ModelManager.DownloadState.Downloading).progress
@@ -442,10 +464,14 @@ fun ChatScreen(
 
     // Model switcher bottom sheet
     if (showModelSwitcher) {
+        val storageInfo = viewModel.getStorageInfo()
         ModelSwitcherSheet(
             currentModelId = currentModel,
             downloadedModels = downloadedModels,
             downloadState = downloadState,
+            availableStorageGb = storageInfo.availableStorageGb,
+            availableRamGb = storageInfo.availableRamGb,
+            totalRamGb = storageInfo.totalRamGb,
             onModelSelected = { model ->
                 viewModel.switchModel(model)
                 if (model.id in downloadedModels) {

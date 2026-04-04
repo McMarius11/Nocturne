@@ -62,7 +62,8 @@ class MainActivity : ComponentActivity() {
                         onHangUp = { currentScreen = "chat" }
                     )
                     "debug" -> DebugLogScreen(
-                        onBack = { currentScreen = "chat" }
+                        onBack = { currentScreen = "chat" },
+                        debugInfo = viewModel.getDebugInfo()
                     )
                 }
             }

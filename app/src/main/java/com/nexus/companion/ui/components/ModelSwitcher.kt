@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -57,6 +58,9 @@ fun ModelSwitcherSheet(
     currentModelId: String?,
     downloadedModels: Set<String>,
     downloadState: ModelManager.DownloadState,
+    availableStorageGb: Float = 0f,
+    availableRamGb: Float = 0f,
+    totalRamGb: Float = 0f,
     onModelSelected: (ModelInfo) -> Unit,
     onModelDeleted: ((ModelInfo) -> Unit)? = null,
     onDismiss: () -> Unit
@@ -81,7 +85,15 @@ fun ModelSwitcherSheet(
                 text = "LLM Model",
                 fontSize = 20.sp,
                 color = NexusTextPrimary,
-                modifier = Modifier.padding(bottom = 16.dp)
+                modifier = Modifier.padding(bottom = 4.dp)
+            )
+
+            // Storage & RAM info
+            Text(
+                text = "Speicher: ${String.format("%.1f", availableStorageGb)} GB frei  •  RAM: ${String.format("%.1f", availableRamGb)} / ${String.format("%.0f", totalRamGb)} GB",
+                fontSize = 11.sp,
+                color = NexusTextDim,
+                modifier = Modifier.padding(bottom = 12.dp)
             )
 
             ModelInfo.ALL_MODELS.forEach { model ->
@@ -125,16 +137,44 @@ fun ModelSwitcherSheet(
         }
     }
 
-    // Download confirmation dialog
+    // Download confirmation dialog with RAM warning
     confirmDownload?.let { model ->
+        val estimatedRam = model.sizeGb + 2.0f
+        val ramWarning = totalRamGb > 0 && estimatedRam > availableRamGb
+        val storageWarning = availableStorageGb < model.sizeGb + 0.5f
+
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { confirmDownload = null },
             title = { Text("${model.displayName} herunterladen?", color = NexusTextPrimary) },
             text = {
-                Text(
-                    "Größe: ${model.sizeGb} GB\nDas Modell wird im Hintergrund heruntergeladen.",
-                    color = NexusTextSecondary
-                )
+                Column {
+                    Text(
+                        "Download: ${model.sizeGb} GB\nSpeicher frei: ${String.format("%.1f", availableStorageGb)} GB",
+                        color = NexusTextSecondary
+                    )
+                    if (ramWarning) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.BatteryChargingFull, null, tint = BatteryYellow, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                "RAM-Warnung: Dieses Modell braucht ~${String.format("%.0f", estimatedRam)} GB RAM. " +
+                                "Dein Gerät hat ${String.format("%.0f", totalRamGb)} GB (${String.format("%.1f", availableRamGb)} GB frei). " +
+                                "Es könnte langsam werden oder abstürzen.",
+                                fontSize = 12.sp,
+                                color = BatteryYellow
+                            )
+                        }
+                    }
+                    if (storageWarning) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            "Nicht genug Speicherplatz!",
+                            fontSize = 12.sp,
+                            color = BatteryRed
+                        )
+                    }
+                }
             },
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = {
