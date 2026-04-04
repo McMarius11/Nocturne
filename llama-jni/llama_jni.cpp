@@ -765,6 +765,7 @@ Java_com_nexus_companion_llm_LlamaJni_continueStreaming(
 
 JNIEXPORT jint JNICALL
 Java_com_nexus_companion_llm_LlamaJni_getCurrentPosition(JNIEnv *, jobject) {
+    std::lock_guard<std::mutex> lock(g_mutex);
     return g_current_pos;
 }
 

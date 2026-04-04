@@ -31,6 +31,7 @@ class NeuTtsEngine(private val context: Context) {
     private var activeTtsModelId: String? = null
 
     private var currentProfile: VoiceProfile = VoiceProfile.ANDROID_DE
+    @Volatile
     private var selectedSpeakerId: Int = 0
 
     @Volatile
