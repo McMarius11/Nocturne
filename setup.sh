@@ -79,11 +79,12 @@ if [ ! -f "$JNILIBS_DIR/libsherpa-onnx-jni.so" ]; then
     TMPTAR=$(mktemp /tmp/sherpa-XXXXX.tar.bz2)
     wget -q --show-progress -O "$TMPTAR" \
         "https://github.com/k2-fsa/sherpa-onnx/releases/download/v${SHERPA_VERSION}/sherpa-onnx-v${SHERPA_VERSION}-android.tar.bz2"
-    tar xjf "$TMPTAR" -C /tmp
+    TMPDIR_SHERPA=$(mktemp -d /tmp/sherpa-extract-XXXXX)
+    tar xjf "$TMPTAR" -C "$TMPDIR_SHERPA"
     mkdir -p "$JNILIBS_DIR"
-    cp "/tmp/sherpa-onnx-v${SHERPA_VERSION}-android/jniLibs/arm64-v8a/libsherpa-onnx-jni.so" "$JNILIBS_DIR/"
-    cp "/tmp/sherpa-onnx-v${SHERPA_VERSION}-android/jniLibs/arm64-v8a/libonnxruntime.so" "$JNILIBS_DIR/"
-    rm -rf "/tmp/sherpa-onnx-v${SHERPA_VERSION}-android" "$TMPTAR"
+    cp "$TMPDIR_SHERPA/jniLibs/arm64-v8a/libsherpa-onnx-jni.so" "$JNILIBS_DIR/"
+    cp "$TMPDIR_SHERPA/jniLibs/arm64-v8a/libonnxruntime.so" "$JNILIBS_DIR/"
+    rm -rf "$TMPDIR_SHERPA" "$TMPTAR"
     info "sherpa-onnx TTS libs installed"
 else
     info "sherpa-onnx TTS libs already present"
