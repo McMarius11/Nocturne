@@ -77,10 +77,10 @@ class LlmEngine(private val context: Context) {
             val contextLength = model.contextLength
             DebugLog.llm("Loading ${model.displayName} (${fileSize} MB, ctx=$contextLength, format=${model.promptFormat})")
             DebugLog.llm("Path: $path")
-            // Load dynamic CPU backend variants (once)
+            // Initialize backends (no-op with static build, but kept for compatibility)
             if (!backendsLoaded) {
                 val nativeLibDir = context.applicationInfo.nativeLibraryDir
-                DebugLog.llm("Loading backends from: $nativeLibDir")
+                DebugLog.llm("Native lib dir: $nativeLibDir")
                 jni.loadBackends(nativeLibDir)
                 backendsLoaded = true
             }
