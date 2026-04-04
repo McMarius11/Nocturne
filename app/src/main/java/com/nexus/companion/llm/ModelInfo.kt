@@ -59,7 +59,7 @@ data class ModelInfo(
             batteryPerHour = 8,
             description = "Thinking-Modus, unzensiert, kleiner (2.7 GB)",
             promptFormat = PromptFormat.CHATML,
-            contextLength = 8192
+            contextLength = 4096  // 4096 for mobile CPU — halves KV cache, faster attention
         )
 
         // --- Roleplay / Companion models ---
@@ -74,7 +74,7 @@ data class ModelInfo(
             batteryPerHour = 13,
             description = "Roleplay — warm und romantisch (5.1 GB)",
             promptFormat = PromptFormat.ALPACA,
-            contextLength = 8192
+            contextLength = 4096  // 4096 for mobile CPU — 7B model needs lower ctx
         )
 
         val MYTHOMAX_13B = ModelInfo(

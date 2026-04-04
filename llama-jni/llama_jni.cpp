@@ -36,7 +36,7 @@ static std::string                   g_last_error;
 
 // Constants
 constexpr int BATCH_SIZE = 512;       // Logical batch size (max tokens per llama_decode call)
-constexpr int UBATCH_SIZE = 32;       // Physical micro-batch (actual parallel work per iteration)
+constexpr int UBATCH_SIZE = 128;      // Physical micro-batch — 128 optimal for Pixel 9 Pro big cores
 constexpr int OVERFLOW_HEADROOM = 4;
 static int g_n_ctx = 4096;
 
@@ -216,24 +216,25 @@ Java_com_nexus_companion_llm_LlamaJni_loadModel(
     // Create context
     g_n_ctx = contextLength;
     int n_cpus = (int)sysconf(_SC_NPROCESSORS_ONLN);
-    // Use up to nThreads but leave 2 cores for Android system + UI.
-    // On Pixel 9 Pro (1xX4 + 3xA720 + 4xA520 = 8 cores), 4 threads
-    // uses the big cores for inference while leaving LITTLE cores free.
-    int threads = std::max(1, std::min((int)nThreads, n_cpus - 2));
-    LOGI("CPU cores: %d, using %d threads for inference", n_cpus, threads);
+    // Pixel 9 Pro Tensor G4: 1xX4 + 3xA720 + 4xA520 = 8 cores.
+    // Generation (sequential): 4 threads on big cores for best single-token latency.
+    // Batch/prompt decode (parallel): 6 threads to saturate big+mid cores for throughput.
+    int gen_threads = std::max(1, std::min((int)nThreads, n_cpus - 2));
+    int batch_threads = std::max(gen_threads, std::min(n_cpus - 1, 6));
+    LOGI("CPU cores: %d, gen_threads=%d, batch_threads=%d", n_cpus, gen_threads, batch_threads);
 
     auto ctx_params = llama_context_default_params();
     ctx_params.n_ctx = g_n_ctx;
     ctx_params.n_batch = BATCH_SIZE;
-    ctx_params.n_ubatch = UBATCH_SIZE;         // Smaller micro-batch = better cache locality on mobile
-    ctx_params.n_threads = threads;
-    ctx_params.n_threads_batch = threads;
+    ctx_params.n_ubatch = UBATCH_SIZE;         // 128: good throughput on Pixel 9 Pro big cores
+    ctx_params.n_threads = gen_threads;
+    ctx_params.n_threads_batch = batch_threads;
     ctx_params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
     ctx_params.type_k = GGML_TYPE_Q8_0;        // KV cache quantization: 50% less memory bandwidth
     ctx_params.type_v = GGML_TYPE_Q8_0;        // Negligible quality loss, major speed gain
 
-    LOGI("Context params: ctx=%d batch=%d ubatch=%d threads=%d flash_attn=on kv=q8_0",
-         g_n_ctx, BATCH_SIZE, UBATCH_SIZE, threads);
+    LOGI("Context params: ctx=%d batch=%d ubatch=%d gen_threads=%d batch_threads=%d flash_attn=on kv=q8_0",
+         g_n_ctx, BATCH_SIZE, UBATCH_SIZE, gen_threads, batch_threads);
 
     g_context = llama_init_from_model(g_model, ctx_params);
     if (!g_context) {
@@ -274,8 +275,8 @@ Java_com_nexus_companion_llm_LlamaJni_loadModel(
         return JNI_FALSE;
     }
 
-    LOGI("Model loaded OK: ctx=%d, threads=%d, vocab=%d",
-         g_n_ctx, threads, llama_vocab_n_tokens(llama_model_get_vocab(g_model)));
+    LOGI("Model loaded OK: ctx=%d, gen_threads=%d, batch_threads=%d, vocab=%d",
+         g_n_ctx, gen_threads, batch_threads, llama_vocab_n_tokens(llama_model_get_vocab(g_model)));
     return JNI_TRUE;
 }
 
