@@ -32,6 +32,9 @@ class LlamaJni {
     external fun getLastError(): String
     external fun getModelInfo(): String
 
+    /** Pre-decode system prompt into KV cache so first message is faster */
+    external fun warmUpSystemPrompt(systemPrompt: String): Boolean
+
     /** Smoke test: tokenize "hello", decode 1 batch, sample 1 token. Returns timing info or error. */
     external fun benchmarkDecode(): String
 

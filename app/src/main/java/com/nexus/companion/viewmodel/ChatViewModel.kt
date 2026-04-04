@@ -448,6 +448,8 @@ Keep your responses natural and not too long."""
                 settingsStore.setSelectedModelId(model.id)
                 resetIdleTimer()
                 DebugLog.llm("Model ready: ${model.displayName}")
+                // Pre-decode system prompt in background so first message is fast
+                llmEngine.warmUp(SYSTEM_PROMPT)
             } else {
                 showError("Modell konnte nicht geladen werden. Prüfe Debug Log.")
             }

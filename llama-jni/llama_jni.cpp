@@ -924,6 +924,60 @@ Java_com_nexus_companion_llm_LlamaJni_getBackendInfo(JNIEnv *env, jobject) {
 }
 
 /**
+ * Pre-decode the system prompt so it's cached in KV.
+ * Subsequent generateStreaming/continueStreaming calls can skip re-decoding it.
+ * Call this once after loadModel to warm up the first-message path.
+ */
+JNIEXPORT jboolean JNICALL
+Java_com_nexus_companion_llm_LlamaJni_warmUpSystemPrompt(
+    JNIEnv *env, jobject, jstring systemPrompt
+) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    g_abort = false;
+    g_last_error.clear();
+
+    if (!g_model || !g_context || !g_sampler) {
+        g_last_error = "Model not loaded";
+        return JNI_FALSE;
+    }
+
+    const char *str = env->GetStringUTFChars(systemPrompt, nullptr);
+    if (!str) {
+        g_last_error = "OOM getting system prompt";
+        return JNI_FALSE;
+    }
+    std::string promptCpp(str);
+    env->ReleaseStringUTFChars(systemPrompt, str);
+
+    // Reset KV cache — start fresh
+    reset_state(true);
+    common_sampler_reset(g_sampler);
+
+    auto tokens = common_tokenize(g_context, promptCpp, false, true);
+    if (tokens.empty()) {
+        g_last_error = "Empty system prompt after tokenization";
+        return JNI_FALSE;
+    }
+
+    LOGI("Warm-up: decoding %d system prompt tokens...", (int)tokens.size());
+    auto t0 = ggml_time_us();
+    int rc = decode_in_batches(tokens, 0, false); // no logits needed for prefill
+    auto ms = (ggml_time_us() - t0) / 1000;
+
+    if (rc != 0) {
+        LOGE("Warm-up decode failed (rc=%d)", rc);
+        g_last_error = "System prompt decode failed";
+        reset_state(true);
+        return JNI_FALSE;
+    }
+
+    g_current_pos = (int)tokens.size();
+    g_system_prompt_pos = g_current_pos;
+    LOGI("Warm-up done: %d tokens in %lld ms (pos=%d)", (int)tokens.size(), (long long)ms, g_current_pos);
+    return JNI_TRUE;
+}
+
+/**
  * Recreate the context with a different thread count.
  * Used for thread-count fallback (e.g. try 1 thread if 2 hangs).
  */

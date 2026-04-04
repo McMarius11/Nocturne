@@ -48,6 +48,10 @@ class LlmEngine(private val context: Context) {
     @Volatile
     private var isKvCached = false
 
+    /** Track which system prompt is pre-cached in KV (null = none) */
+    @Volatile
+    private var cachedSystemPrompt: String? = null
+
     val downloadState get() = modelManager.downloadProgress
 
     fun isReady(): Boolean = jni.isModelLoaded()
@@ -95,6 +99,7 @@ class LlmEngine(private val context: Context) {
             if (success) {
                 currentModel = model
                 isKvCached = false
+                cachedSystemPrompt = null
                 triedSingleThread = false
                 val info = jni.getModelInfo()
                 DebugLog.llm("Model loaded in ${loadMs}ms ($info)")
@@ -136,6 +141,39 @@ class LlmEngine(private val context: Context) {
             DebugLog.llm("Load error: ${e.message}")
             false
         }
+    }
+
+    /**
+     * Pre-decode the system prompt into KV cache so the first user message is fast.
+     * Call this after loadModel() with the same system prompt used for generation.
+     */
+    suspend fun warmUp(systemPrompt: String, memoryContext: String = ""): Boolean = withContext(Dispatchers.IO) {
+        if (!jni.isModelLoaded()) return@withContext false
+        val format = currentModel?.promptFormat ?: PromptFormat.ALPACA
+        val fullSystemBlock = buildSystemBlock(systemPrompt, memoryContext)
+        val systemText = when (format) {
+            PromptFormat.CHATML -> "<|im_start|>system\n$fullSystemBlock<|im_end|>\n"
+            PromptFormat.GEMMA -> "<bos><start_of_turn>system\n$fullSystemBlock<end_of_turn>\n"
+            PromptFormat.ALPACA -> "### Instruction:\n$fullSystemBlock\n\n"
+        }
+        DebugLog.llm("Warm-up: pre-decoding system prompt (${systemText.length} chars, format=$format)")
+        val warmStart = System.currentTimeMillis()
+        val success = try {
+            jni.warmUpSystemPrompt(systemText)
+        } catch (e: Exception) {
+            DebugLog.llm("Warm-up failed: ${e.message}")
+            false
+        }
+        val warmMs = System.currentTimeMillis() - warmStart
+        if (success) {
+            cachedSystemPrompt = systemPrompt
+            isKvCached = true
+            DebugLog.llm("Warm-up done in ${warmMs}ms — first message will be fast")
+        } else {
+            cachedSystemPrompt = null
+            DebugLog.llm("Warm-up failed after ${warmMs}ms — will use full decode")
+        }
+        success
     }
 
     /** Track whether we already tried falling back to 1 thread */
@@ -190,7 +228,6 @@ class LlmEngine(private val context: Context) {
     ): String {
         try {
             val format = currentModel?.promptFormat ?: PromptFormat.ALPACA
-            val useIncremental = isKvCached && jni.getCurrentPosition() > 0
 
             val genStart = System.currentTimeMillis()
             var tokenCount = 0
@@ -229,11 +266,28 @@ class LlmEngine(private val context: Context) {
 
             val result: String
 
-            if (useIncremental) {
-                // Incremental mode: only decode new user turn
-                val continuation = buildContinuation(format, userMessage)
+            // If warm-up is active but memory context was added, invalidate warm-up
+            // (memory is dynamic and wasn't part of the pre-cached system prompt)
+            if (cachedSystemPrompt != null && memoryContext.isNotBlank()) {
+                DebugLog.llm("Memory context present — invalidating warm-up cache")
+                cachedSystemPrompt = null
+                isKvCached = false
+            }
+            val useIncrementalFinal = isKvCached && jni.getCurrentPosition() > 0
+
+            if (useIncrementalFinal) {
+                // Incremental mode
+                val isFirstAfterWarmup = cachedSystemPrompt != null
+                val continuation = if (isFirstAfterWarmup) {
+                    // System prompt pre-cached — append history + user turn directly
+                    buildHistoryAndUser(format, chatHistory, userMessage)
+                } else {
+                    // Normal incremental: just the new user turn (previous response in KV)
+                    buildContinuation(format, userMessage)
+                }
+                // Clear warmup flag — subsequent turns use normal incremental mode
+                cachedSystemPrompt = null
                 DebugLog.llm("Continue: ${continuation.length} chars (KV pos=${jni.getCurrentPosition()})")
-                DebugLog.llm("Continuation: ${continuation.replace("\n", "\\n")}")
 
                 val watchdogJob = launchWatchdog(genStart) { tokenCount }
                 result = try {
@@ -269,12 +323,14 @@ class LlmEngine(private val context: Context) {
             if (result.startsWith("[Error:")) {
                 val nativeError = jni.getLastError()
                 DebugLog.llm("Generation error: $result | Native: $nativeError")
-                isKvCached = false // Invalidate cache on error
+                isKvCached = false
+                cachedSystemPrompt = null
             } else if (result.isBlank()) {
                 val nativeError = jni.getLastError()
                 DebugLog.llm("WARNING: Empty response after ${genMs}ms ($tokenCount tokens)")
                 DebugLog.llm("Native error: $nativeError")
                 isKvCached = false
+                cachedSystemPrompt = null
             } else {
                 DebugLog.llm("Response: ${result.length} chars, $tokenCount tokens in ${genMs}ms (${String.format("%.1f", tokPerSec)} t/s)")
                 isKvCached = true // Cache is warm for next turn
@@ -285,6 +341,7 @@ class LlmEngine(private val context: Context) {
             Log.e(TAG, "Error during generation", e)
             DebugLog.llm("Generation exception: ${e.message}")
             isKvCached = false
+            cachedSystemPrompt = null
             return "[Error: ${e.message ?: "Unknown"}]"
         }
     }
@@ -323,6 +380,45 @@ class LlmEngine(private val context: Context) {
                 "<end_of_turn>\n<start_of_turn>user\n$userMessage<end_of_turn>\n<start_of_turn>model\n"
             PromptFormat.ALPACA ->
                 "\n\n### Input:\n$userMessage\n\n### Response:\n"
+        }
+    }
+
+    /**
+     * Build history + user turn for when system prompt is already in KV cache.
+     * Continues from the system prompt end marker.
+     */
+    private fun buildHistoryAndUser(
+        format: PromptFormat,
+        history: List<Pair<String, String>>,
+        userMessage: String
+    ): String = when (format) {
+        PromptFormat.CHATML -> {
+            val sb = StringBuilder()
+            for ((user, assistant) in history.takeLast(10)) {
+                sb.append("<|im_start|>user\n$user<|im_end|>\n")
+                sb.append("<|im_start|>assistant\n$assistant<|im_end|>\n")
+            }
+            sb.append("<|im_start|>user\n$userMessage<|im_end|>\n")
+            sb.append("<|im_start|>assistant\n")
+            sb.toString()
+        }
+        PromptFormat.GEMMA -> {
+            val sb = StringBuilder()
+            for ((user, assistant) in history.takeLast(10)) {
+                sb.append("<start_of_turn>user\n$user<end_of_turn>\n")
+                sb.append("<start_of_turn>model\n$assistant<end_of_turn>\n")
+            }
+            sb.append("<start_of_turn>user\n$userMessage<end_of_turn>\n")
+            sb.append("<start_of_turn>model\n")
+            sb.toString()
+        }
+        PromptFormat.ALPACA -> {
+            val sb = StringBuilder()
+            for ((user, assistant) in history.takeLast(10)) {
+                sb.append("### Input:\n$user\n\n### Response:\n$assistant\n\n")
+            }
+            sb.append("### Input:\n$userMessage\n\n### Response:\n")
+            sb.toString()
         }
     }
 
@@ -416,6 +512,7 @@ class LlmEngine(private val context: Context) {
         jni.abort()
         currentModel = null
         isKvCached = false
+        cachedSystemPrompt = null
         // Use engine scope (not GlobalScope) — must complete even if ViewModel is cleared
         engineScope.launch {
             try {
