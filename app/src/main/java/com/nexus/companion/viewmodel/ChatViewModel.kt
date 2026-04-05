@@ -137,7 +137,13 @@ Keep your responses natural and not too long."""
 
         // Collect streaming tokens, suppressing <think>...</think> blocks from UI
         viewModelScope.launch {
-            var rawBuffer = StringBuilder()
+            val rawBuffer = StringBuilder()
+            // Reset buffer when new generation starts
+            launch {
+                _isGenerating.collect { generating ->
+                    if (generating) rawBuffer.clear()
+                }
+            }
             llmEngine.tokenStream.collect { token ->
                 rawBuffer.append(token)
                 val raw = rawBuffer.toString()
