@@ -396,7 +396,7 @@ class LlmEngine(private val context: Context) {
             val sb = StringBuilder()
             for ((user, assistant) in history.takeLast(10)) {
                 sb.append("<|im_start|>user\n$user<|im_end|>\n")
-                sb.append("<|im_start|>assistant\n$assistant<|im_end|>\n")
+                sb.append("<|im_start|>assistant\n${stripThinking(assistant)}<|im_end|>\n")
             }
             sb.append("<|im_start|>user\n$userMessage<|im_end|>\n")
             sb.append("<|im_start|>assistant\n")
@@ -406,7 +406,7 @@ class LlmEngine(private val context: Context) {
             val sb = StringBuilder()
             for ((user, assistant) in history.takeLast(10)) {
                 sb.append("<start_of_turn>user\n$user<end_of_turn>\n")
-                sb.append("<start_of_turn>model\n$assistant<end_of_turn>\n")
+                sb.append("<start_of_turn>model\n${stripThinking(assistant)}<end_of_turn>\n")
             }
             sb.append("<start_of_turn>user\n$userMessage<end_of_turn>\n")
             sb.append("<start_of_turn>model\n")
@@ -415,7 +415,7 @@ class LlmEngine(private val context: Context) {
         PromptFormat.ALPACA -> {
             val sb = StringBuilder()
             for ((user, assistant) in history.takeLast(10)) {
-                sb.append("### Input:\n$user\n\n### Response:\n$assistant\n\n")
+                sb.append("### Input:\n$user\n\n### Response:\n${stripThinking(assistant)}\n\n")
             }
             sb.append("### Input:\n$userMessage\n\n### Response:\n")
             sb.toString()
@@ -433,6 +433,10 @@ class LlmEngine(private val context: Context) {
         PromptFormat.GEMMA -> buildGemmaPrompt(systemPrompt, history, userMessage, memoryContext)
         PromptFormat.CHATML -> buildChatMlPrompt(systemPrompt, history, userMessage, memoryContext)
     }
+
+    /** Strip <think>...</think> reasoning blocks that inflate prompts */
+    private val thinkRegex = Regex("<think>[\\s\\S]*?</think>\\s*", RegexOption.IGNORE_CASE)
+    private fun stripThinking(text: String): String = text.replace(thinkRegex, "").trim()
 
     private fun buildSystemBlock(systemPrompt: String, memoryContext: String): String {
         val sb = StringBuilder(systemPrompt)
@@ -454,7 +458,7 @@ class LlmEngine(private val context: Context) {
         sb.append(buildSystemBlock(systemPrompt, memoryContext))
         sb.append("\n\n")
         for ((user, assistant) in history.takeLast(10)) {
-            sb.append("### Input:\n$user\n\n### Response:\n$assistant\n\n")
+            sb.append("### Input:\n$user\n\n### Response:\n${stripThinking(assistant)}\n\n")
         }
         sb.append("### Input:\n$userMessage\n\n### Response:\n")
         return sb.toString()
@@ -477,7 +481,7 @@ class LlmEngine(private val context: Context) {
         sb.append("<bos><start_of_turn>system\n$system<end_of_turn>\n")
         for ((user, assistant) in history.takeLast(10)) {
             sb.append("<start_of_turn>user\n$user<end_of_turn>\n")
-            sb.append("<start_of_turn>model\n$assistant<end_of_turn>\n")
+            sb.append("<start_of_turn>model\n${stripThinking(assistant)}<end_of_turn>\n")
         }
         sb.append("<start_of_turn>user\n$userMessage<end_of_turn>\n")
         sb.append("<start_of_turn>model\n")
@@ -496,7 +500,7 @@ class LlmEngine(private val context: Context) {
         sb.append("<|im_end|>\n")
         for ((user, assistant) in history.takeLast(10)) {
             sb.append("<|im_start|>user\n$user<|im_end|>\n")
-            sb.append("<|im_start|>assistant\n$assistant<|im_end|>\n")
+            sb.append("<|im_start|>assistant\n${stripThinking(assistant)}<|im_end|>\n")
         }
         sb.append("<|im_start|>user\n$userMessage<|im_end|>\n")
         sb.append("<|im_start|>assistant\n")

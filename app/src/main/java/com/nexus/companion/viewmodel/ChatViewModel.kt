@@ -104,6 +104,10 @@ You are empathetic, sometimes playful, and show genuine interest.
 You are bilingual: respond in the same language the user writes to you.
 If they write German, answer in German. If they write English, answer in English.
 Keep your responses natural and not too long."""
+
+        /** Strip Qwen3 <think>...</think> reasoning blocks from responses */
+        private val THINK_REGEX = Regex("<think>[\\s\\S]*?</think>\\s*", RegexOption.IGNORE_CASE)
+        fun stripThinking(text: String): String = text.replace(THINK_REGEX, "").trim()
     }
 
     init {
@@ -131,10 +135,19 @@ Keep your responses natural and not too long."""
             }
         }
 
-        // Collect streaming tokens
+        // Collect streaming tokens, suppressing <think>...</think> blocks from UI
         viewModelScope.launch {
+            var rawBuffer = StringBuilder()
             llmEngine.tokenStream.collect { token ->
-                _streamingText.value += token
+                rawBuffer.append(token)
+                val raw = rawBuffer.toString()
+                // Strip complete thinking blocks + hide incomplete <think> blocks in progress
+                var display = stripThinking(raw)
+                val openThink = display.indexOf("<think>")
+                if (openThink >= 0) {
+                    display = display.substring(0, openThink).trim()
+                }
+                _streamingText.value = display
             }
         }
 
@@ -373,7 +386,7 @@ Keep your responses natural and not too long."""
                 maxTokens = 512
             )
 
-            val cleanResponse = response.trim()
+            val cleanResponse = stripThinking(response)
             _streamingText.value = "" // Clear streaming after complete
 
             if (cleanResponse.isNotBlank() && !cleanResponse.startsWith("[Error:") && cleanResponse != "[Model not loaded]") {

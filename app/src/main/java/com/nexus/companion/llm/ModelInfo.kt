@@ -62,6 +62,19 @@ data class ModelInfo(
             contextLength = 4096  // 4096 for mobile CPU — halves KV cache, faster attention
         )
 
+        val QWEN3_1_7B_ABLITERATED = ModelInfo(
+            id = "qwen3-1.7b-abliterated",
+            displayName = "Qwen3 1.7B Abliterated",
+            fileName = "mlabonne_Qwen3-1.7B-abliterated-Q4_K_M.gguf",
+            downloadUrl = "https://huggingface.co/bartowski/mlabonne_Qwen3-1.7B-abliterated-GGUF/resolve/main/mlabonne_Qwen3-1.7B-abliterated-Q4_K_M.gguf",
+            sizeGb = 1.2f,
+            sizeBytes = 1_200_000_000L,
+            batteryPerHour = 5,
+            description = "Schnell — unzensiert, leicht, ideal für ältere Geräte (1.2 GB)",
+            promptFormat = PromptFormat.CHATML,
+            contextLength = 4096
+        )
+
         // --- Roleplay / Companion models ---
 
         val NOROMAID_7B = ModelInfo(
@@ -94,6 +107,7 @@ data class ModelInfo(
             GEMMA4_E4B_UNCENSORED,
             GEMMA4_E4B,
             QWEN3_4B_ABLITERATED,
+            QWEN3_1_7B_ABLITERATED,
             NOROMAID_7B,
             MYTHOMAX_13B
         )
