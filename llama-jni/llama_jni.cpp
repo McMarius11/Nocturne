@@ -202,8 +202,25 @@ Java_com_nexus_companion_llm_LlamaJni_loadModel(
         return JNI_FALSE;
     }
 
-    // Load model
+    // Load model — offload all layers to GPU if Vulkan is available
     auto model_params = llama_model_default_params();
+    // Check if a GPU device is available (Vulkan backend)
+    bool has_gpu = false;
+    for (size_t i = 0; i < ggml_backend_dev_count(); i++) {
+        auto dev = ggml_backend_dev_get(i);
+        if (ggml_backend_dev_type(dev) == GGML_BACKEND_DEVICE_TYPE_GPU) {
+            has_gpu = true;
+            LOGI("GPU device found: %s (%s)", ggml_backend_dev_name(dev),
+                 ggml_backend_dev_description(dev));
+            break;
+        }
+    }
+    if (has_gpu) {
+        model_params.n_gpu_layers = 99; // Offload all layers to GPU
+        LOGI("GPU offload: all layers → Vulkan");
+    } else {
+        LOGI("No GPU device — using CPU only");
+    }
     g_model = llama_model_load_from_file(path, model_params);
     env->ReleaseStringUTFChars(modelPath, path);
 
