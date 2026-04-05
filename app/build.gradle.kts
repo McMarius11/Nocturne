@@ -36,6 +36,9 @@ android {
         externalNativeBuild {
             cmake {
                 arguments("-DANDROID_STL=c++_shared")
+                // Forward extra CMake args (e.g. -DNEXUS_VULKAN=OFF from CI)
+                val extra = project.findProperty("cmakeArgs") as? String
+                if (extra != null) arguments(extra)
                 cppFlags("-std=c++17")
             }
         }

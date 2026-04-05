@@ -40,15 +40,6 @@ jobs:
           git clone --depth 1 --branch b8662 --recurse-submodules --shallow-submodules \
             https://github.com/ggml-org/llama.cpp.git external/llama.cpp
 
-      - name: Install Vulkan C++ headers for GPU backend
-        run: |
-          # NDK has vulkan/vulkan.h but not vulkan/vulkan.hpp (C++ wrapper)
-          # Install Khronos Vulkan-Hpp headers into NDK sysroot
-          NDK_VULKAN_DIR="$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/vulkan"
-          git clone --depth 1 https://github.com/KhronosGroup/Vulkan-Hpp.git /tmp/vulkan-hpp
-          sudo cp /tmp/vulkan-hpp/vulkan/*.hpp "$NDK_VULKAN_DIR/"
-          rm -rf /tmp/vulkan-hpp
-
       - name: Download sherpa-onnx Android libs (TTS)
         run: |
           SHERPA_VERSION="1.12.34"
@@ -70,10 +61,10 @@ jobs:
         run: ./gradlew testDebugUnitTest
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug
+        run: ./gradlew assembleDebug -PcmakeArgs="-DNEXUS_VULKAN=OFF"
 
       - name: Build Release APK (unsigned)
-        run: ./gradlew assembleRelease
+        run: ./gradlew assembleRelease -PcmakeArgs="-DNEXUS_VULKAN=OFF"
         continue-on-error: true
 
       - name: Upload Debug APK

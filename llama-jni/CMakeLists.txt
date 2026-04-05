@@ -33,8 +33,15 @@ set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
 # ===== Vulkan GPU acceleration =====
 # Pixel 9 Pro: Mali-G715 with Vulkan 1.3
 # Offloads matrix ops to GPU — 3-5x faster prompt decode than CPU-only
-set(GGML_VULKAN ON CACHE BOOL "" FORCE)
-set(GGML_VULKAN_SHADER_COMP_THREADS 4 CACHE STRING "" FORCE)
+# Controlled via NEXUS_VULKAN option (default ON, CI sets OFF)
+option(NEXUS_VULKAN "Enable Vulkan GPU backend" ON)
+if(NEXUS_VULKAN)
+    set(GGML_VULKAN ON CACHE BOOL "" FORCE)
+    set(GGML_VULKAN_SHADER_COMP_THREADS 4 CACHE STRING "" FORCE)
+else()
+    set(GGML_VULKAN OFF CACHE BOOL "" FORCE)
+    message(STATUS "Vulkan disabled (NEXUS_VULKAN=OFF)")
+endif()
 
 # Also set GGML_CPU_ARM_ARCH as belt-and-suspenders
 set(GGML_CPU_ARM_ARCH "armv8.6-a+dotprod+i8mm+fp16" CACHE STRING "" FORCE)
