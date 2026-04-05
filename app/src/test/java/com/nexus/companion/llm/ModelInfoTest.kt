@@ -10,7 +10,7 @@ class ModelInfoTest {
 
     @Test
     fun allModelsContainsFiveModels() {
-        assertEquals(5, ModelInfo.ALL_MODELS.size)
+        assertEquals(6, ModelInfo.ALL_MODELS.size)
     }
 
     @Test
